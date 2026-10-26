@@ -71,6 +71,7 @@
       diag_indice: '', diag_custo_ineficiencia: '', diag_custo_oportunidade: '', diag_pilares: '', diag_pdf: '',
       cliente_mdl: '', cliente_ilu: '', eventos: '',
       transacao: '', produto_hotmart: '', valor_venda: '', status_hotmart: '',
+      hist_campanhas: '', hist_comprou: '', hist_atendente: '', hist_motivo: '', historico_comercial: '',
       utm_source: pick(['instagram', 'email', 'youtube', '']), utm_campaign: 'black-friday-2026',
       dados_extra: '', criado_por: 'ActiveCampaign', atualizado_em: agora()
     };
@@ -94,6 +95,23 @@
     else if (rel < 0.26) l.cliente_mdl = 'Ex Mamber · Máquina de Lucros Essencial';
     else if (rel < 0.33) l.cliente_ilu = 'Ex iluminista';
     if (r() < 0.3) l.eventos = JSON.stringify([{ e: 'Workshop SP 2026', t: pick(['Normal', 'VIP']), f: pick(['Sim', 'Não']) }]);
+    // histórico em campanhas anteriores do comercial
+    const hr = r();
+    if (hr < 0.34) {
+      const passagens = [];
+      const camp = pick(['Workshop Pago 07/10', 'Perpétuo', 'Treinamento 27/10']);
+      const st = hr < 0.06 ? 'ganho' : hr < 0.2 ? 'perdido' : 'tratativa';
+      const mot = st === 'perdido' ? pick(['Não respondeu', 'Já é Mamber', 'Sem dinheiro agora', 'Sem interesse']) : '';
+      const at = pick(['Noelle Mulek', 'Natália Rodrigues', 'Danielle Silva']);
+      passagens.push({ c: camp, s: st, m: mot, a: at, q: atras(20 + r() * 30).slice(0, 10) });
+      if (hr < 0.1) passagens.push({ c: 'Perpétuo', s: 'perdido', m: 'Não respondeu', a: at, q: atras(55 + r() * 20).slice(0, 10) });
+      l.hist_campanhas = String(passagens.length);
+      l.hist_comprou = passagens.some((x) => x.s === 'ganho') ? 'sim' : '';
+      l.hist_atendente = at;
+      l.hist_motivo = mot;
+      l.historico_comercial = JSON.stringify(passagens);
+      if (/mamber/i.test(mot)) l.cliente_mdl = 'Mamber Ativo · informado pelo comercial';
+    }
     // jornada
     const etapa = r();
     if (etapa > 0.3) {
@@ -176,6 +194,11 @@
     if (l.contato === 'feito') add(5, 'já falou com a atendente');
     if (l.confirmou_live === 'sim') add(8, 'confirmou a abertura');
     if (l.participou === 'sim') add(12, 'assistiu a abertura');
+    if (l.hist_comprou === 'sim') add(12, 'já comprou da 4blue em outra campanha');
+    else if (Number(l.hist_campanhas || 0) >= 2) add(5, 'já passou por ' + l.hist_campanhas + ' campanhas nossas');
+    else if (l.hist_campanhas) add(3, 'já passou por outra campanha nossa');
+    if (/não respondeu/i.test(String(l.hist_motivo || ''))) add(-4, 'não respondeu na campanha anterior');
+    else if (/caro|sem dinheiro/i.test(String(l.hist_motivo || ''))) add(-3, 'barrou no preço antes');
     if (clienteAtivo(l)) add(-60, 'JÁ É CLIENTE ATIVO — fora do público desta oferta');
     else {
       if (l.cliente_mdl) add(8, 'ex-cliente do MDL');
@@ -184,7 +207,7 @@
       if (ev) add(Math.min(ev * 3, 9), ev + ' evento(s) da 4blue');
     }
     const s = Math.round(p);
-    const temDados = !!(l.diag_indice || l.diag_faturamento || l.cliente_mdl || l.cliente_ilu || eventos(l).length);
+    const temDados = !!(l.diag_indice || l.diag_faturamento || l.cliente_mdl || l.cliente_ilu || eventos(l).length || l.hist_campanhas);
     const faixa = s >= 80 ? 'quente' : s >= 60 ? 'mql_mais' : s >= 40 ? 'mql' : s >= 20 ? 'viavel' : s >= 5 ? 'baixo' : 'fora';
     return { score: s, classificacao: clienteAtivo(l) ? 'cliente' : (temDados ? faixa : 'sem_dados'), score_motivos: m.join(' · '), cliente_ativo: clienteAtivo(l) };
   }
@@ -204,6 +227,8 @@
     diag_planilha_id: '1XZ1PFVywi1fCAkkTFsjlFtLZPgP-UwSMIpIrsvfmRqY', diag_aba: 'Diagnosticos',
     diag_ultima_sinc: atras(0.01), diag_criar_lead: false,
     base_id: '1ihgdFxaR5cM6xyAECvJ-IORN1dmghRin9gmRFCsHe5I', ultima_sincronizacao: atras(0.05),
+    hist_planilhas: '1D8U7pZLpBPo3rjT4GLkOyZcLKmXanqF6heoNjOcukCc;Workshop Pago 07/10\n1QUMW0yUcF2XmuyhEdZmWew0ZN3B_NLkUfK5Udb847d4;Perpétuo\n1C37FGv5fR7pfMSNSe6iM-_YGWe20df_Upg8ko2M6duE;Treinamento 27/10',
+    hist_ultima_sinc: atras(0.08), hist_seguir_atendente: true,
     versao: 'demonstração',
     webhooks: [
       { recebido_em: atras(0.01), tipo: 'inscricao', identificacao: 'novo.inscrito@exemplo.com', status: 'ok', resultado: 'Inscrito criado · Noelle Mulek' },
@@ -312,10 +337,16 @@
       if (c.QUEM_GERENCIA !== undefined) config.quem_gerencia = c.QUEM_GERENCIA;
       if (c.HOTMART_MODO_TESTE !== undefined) config.modo_teste = c.HOTMART_MODO_TESTE === 'SIM';
       if (c.DIAG_CRIAR_LEAD !== undefined) config.diag_criar_lead = c.DIAG_CRIAR_LEAD === 'SIM';
+      if (c.HIST_PLANILHAS !== undefined) config.hist_planilhas = c.HIST_PLANILHAS;
+      if (c.HIST_SEGUIR_ATENDENTE !== undefined) config.hist_seguir_atendente = c.HIST_SEGUIR_ATENDENTE === 'SIM';
       return copia(config);
     },
     'admin.diagnostico.sincronizar': () => ({ linhas: 18, atualizados: 0, ja_estavam: 18, criados: 0, em: agora() }),
     'admin.clientes.sincronizar': () => ({ pessoas_na_base: 412, leads_atualizados: 0, em: agora() }),
+    'admin.historico.sincronizar': () => ({
+      planilhas: [{ campanha: 'Workshop Pago 07/10', linhas: 221, erro: '' }, { campanha: 'Perpétuo', linhas: 133, erro: '' }, { campanha: 'Treinamento 27/10', linhas: 184, erro: '' }],
+      erros: [], atualizados: 0, com_historico: L.filter((l) => l.hist_campanhas).length, devolvidos_a_quem_atendeu: 0, em: agora()
+    }),
     'admin.duplicados': () => ({ grupos: [] }),
     'admin.duplicados.juntar': () => ({ grupos: 0, juntados: 0, detalhes: [] }),
     'admin.importar': (b) => {

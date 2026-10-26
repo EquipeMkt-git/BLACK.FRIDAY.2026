@@ -115,6 +115,12 @@
   const classifDe = (l) => CLASSIF[l.classificacao] || null;
   const ehCliente = (l) => !!l.cliente_ativo;
   const temDiag = (l) => l.diagnostico === 'feito' || !!l.diag_indice;
+  const temHist = (l) => Number(l.hist_campanhas || 0) > 0;
+  const jaComprou = (l) => l.hist_comprou === 'sim';
+  function historicoDe(l) {
+    try { const a = JSON.parse(l.historico_comercial || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  }
+  const ROT_STATUS_ANTIGO = { ganho: 'comprou', perdido: 'perdido', tratativa: 'em conversa', novo: 'não contatado', reembolso: 'reembolso', descartado: 'descartado' };
 
   const STATUS_INFO = {
     novo: { sing: 'Inscrito', plural: 'Inscritos', cor: '#9AA0A8' },
@@ -362,6 +368,8 @@
     if (f === 'diagnostico') return lista.filter(temDiag);
     if (f === 'sem_diag') return lista.filter((l) => !temDiag(l) && !ehCliente(l));
     if (f === 'confirmados') return lista.filter((l) => l.confirmou_live === 'sim');
+    if (f === 'ja_comprou') return lista.filter(jaComprou);
+    if (f === 'historico') return lista.filter(temHist);
     if (f === 'clientes') return lista.filter(ehCliente);
     if (f === 'parados') return lista.filter((l) => horasDesde(l.ultima_acao || l.inicio_tratativa) > 48);
     return lista;
@@ -382,8 +390,9 @@
     const uid = S.user.id;
     const meus = S.leads.filter((l) => l.responsavel_id === uid);
     const base = S.leads.filter((l) => l.status === st && (st === 'novo' || l.responsavel_id === uid));
-    const chipsDef = [['todos', 'Todos'], ['quentes', '🔥 Quentes e MQL+'], ['diagnostico', 'Fizeram o diagnóstico'],
-      ['sem_diag', 'Sem diagnóstico'], ['confirmados', 'Confirmaram a abertura'], ['clientes', '⛔ Já são clientes']];
+    const chipsDef = [['todos', 'Todos'], ['quentes', '🔥 Quentes e MQL+'], ['ja_comprou', '★ Já compraram da 4blue'],
+      ['diagnostico', 'Fizeram o diagnóstico'], ['sem_diag', 'Sem diagnóstico'], ['historico', 'Já passaram por outra campanha'],
+      ['confirmados', 'Confirmaram a abertura'], ['clientes', '⛔ Já são clientes']];
     if (st === 'tratativa') chipsDef.push(['parados', 'Parados +48h']);
     const chips = chipsDef.map(([k, r]) => `<button class="chip ${S.filtro === k ? 'on' : ''}" data-chip="${k}">${r}<span class="n">${aplicaFiltroChip(aplicaBusca(base), k).length}</span></button>`).join('');
     const lista = aplicaFiltroChip(aplicaBusca(base), S.filtro).sort(ordenar(st));
@@ -412,7 +421,8 @@
     const fases = fasesAtivas();
     const semFase = lista.filter((l) => !faseDe(l));
     const ord = ordenar('tratativa');
-    const chipsDef = [['todos', 'Todos'], ['quentes', '🔥 Quentes e MQL+'], ['diagnostico', 'Com diagnóstico'],
+    const chipsDef = [['todos', 'Todos'], ['quentes', '🔥 Quentes e MQL+'], ['ja_comprou', '★ Já compraram'],
+      ['diagnostico', 'Com diagnóstico'], ['historico', 'Já passaram por outra campanha'],
       ['confirmados', 'Confirmaram'], ['clientes', '⛔ Já são clientes'], ['parados', 'Parados +48h']];
     const cab = `
       <div class="page-head"><h2>Funil</h2>
@@ -461,6 +471,8 @@
       const v = MARCOS_INFO[k].vals[l[k]];
       if (v) t.push(`<span class="tag ${v[1]}" title="${esc(MARCOS_INFO[k].rot)}">${esc(v[0])}</span>`);
     });
+    if (jaComprou(l)) t.push('<span class="tag ok" title="Já comprou da 4blue em outra campanha">★ Já comprou da 4blue</span>');
+    else if (temHist(l)) t.push(`<span class="tag info" title="${esc(historicoDe(l).map((h) => h.c + ' — ' + (ROT_STATUS_ANTIGO[h.s] || h.s)).join(' · '))}">Já passou por ${l.hist_campanhas} campanha${Number(l.hist_campanhas) > 1 ? 's' : ''}</span>`);
     if (l.cliente_mdl && !ehCliente(l)) t.push('<span class="tag">Ex-MDL</span>');
     if (l.cliente_ilu && !ehCliente(l)) t.push('<span class="tag">Ex-Iluminismo</span>');
     const ev = eventosDe(l);
@@ -565,6 +577,7 @@
         ${pode && st !== 'novo' ? blocoMarcos(l) : ''}
         ${blocoRanking(l)}
         ${blocoDiagnostico(l)}
+        ${blocoHistorico(l)}
         <div class="secao">Dados do lead</div>
         <div class="info">${info.map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
         ${vs.length ? `<div class="secao">Compra</div>${vs.map((v) => `
@@ -648,6 +661,25 @@
         ${num(l.diag_custo_oportunidade) ? `<div class="mini" style="flex:1"><span>Deixa de ganhar</span><b>${esc(brlCurto(l.diag_custo_oportunidade))}/mês</b></div>` : ''}
       </div>
       ${l.diag_pdf ? `<div style="margin-top:10px"><a class="btn line sm" href="${esc(l.diag_pdf)}" target="_blank" rel="noopener">${I.download}Abrir o PDF do diagnóstico</a></div>` : ''}`;
+  }
+
+  /** O que o comercial já viveu com essa pessoa em outras campanhas. */
+  function blocoHistorico(l) {
+    const h = historicoDe(l);
+    if (!h.length) return '';
+    const cor = (st) => ({ ganho: 'ok', perdido: 'alerta', tratativa: 'info' }[st] || '');
+    return `
+      <div class="secao">Histórico com a 4blue</div>
+      ${jaComprou(l) ? '<div class="caixa ok" style="margin-bottom:10px"><b>★ Essa pessoa já comprou da gente antes.</b><div class="small" style="margin-top:3px">Já conhece o trabalho e confiou uma vez — use isso na conversa.</div></div>' : ''}
+      ${l.hist_atendente ? `<p class="small muted" style="margin-bottom:8px">Quem já atendeu: <b>${esc(l.hist_atendente)}</b></p>` : ''}
+      ${h.map((x) => `
+        <div class="caixa" style="margin-bottom:8px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <b style="flex:1;min-width:0">${esc(x.c)}</b>
+            <span class="tag ${cor(x.s)}">${esc(ROT_STATUS_ANTIGO[x.s] || x.s)}</span>
+          </div>
+          <div class="small muted" style="margin-top:4px">${esc([x.m, x.a, x.q].filter(Boolean).join(' · '))}</div>
+        </div>`).join('')}`;
   }
 
   function blocoFase(l) {
@@ -937,6 +969,15 @@
         if (box) box.innerHTML = r.erro ? `<div class="caixa erro">${esc(r.erro)}</div>`
           : `<div class="caixa ok">Leu ${r.linhas} respostas · ${r.atualizados} leads atualizados${r.criados ? ' · ' + r.criados + ' leads criados' : ''}.</div>`;
       }); break;
+      case 'sinc-hist': comBotao(el, async () => {
+        const r = await api('admin.historico.sincronizar', {});
+        await carregar();
+        const box = document.getElementById('res-hist');
+        if (box) box.innerHTML = r.erro ? `<div class="caixa erro">${esc(r.erro)}</div>`
+          : `<div class="caixa ok"><b>${r.com_historico} leads já passaram por outra campanha</b>
+              <div class="small" style="margin-top:4px">${(r.planilhas || []).map((p) => esc(p.campanha) + ': ' + (p.erro ? '⚠ ' + esc(p.erro) : p.linhas + ' leads')).join(' · ')}</div>
+              ${r.devolvidos_a_quem_atendeu ? `<div class="small" style="margin-top:4px">${r.devolvidos_a_quem_atendeu} lead(s) devolvido(s) para quem já atendia a pessoa.</div>` : ''}</div>`;
+      }); break;
       case 'sinc-clientes': comBotao(el, async () => {
         const r = await api('admin.clientes.sincronizar', {});
         await carregar();
@@ -1032,6 +1073,7 @@
         <div><b class="num">${leads.length}</b><span>Inscritos</span></div>
         <div><b class="num">${comDiag}</b><span>Fizeram o diagnóstico</span></div>
         <div><b class="num">${leads.filter((l) => l.confirmou_live === 'sim').length}</b><span>Confirmaram a abertura</span></div>
+        <div><b class="num">${leads.filter(jaComprou).length}</b><span>Já compraram da 4blue</span></div>
         <div class="destaque"><b class="num">${leads.filter((l) => l.status === 'ganho').length}</b><span>Compraram</span></div>
         <div class="destaque"><b class="num">${brlCurto(faturado)}</b><span>Faturado</span></div>
       </div>
@@ -1083,6 +1125,8 @@
     else if (A.cliente === 'nao') ls = ls.filter((l) => !ehCliente(l));
     else if (A.cliente === 'diag') ls = ls.filter(temDiag);
     else if (A.cliente === 'sem_diag') ls = ls.filter((l) => !temDiag(l));
+    else if (A.cliente === 'ja_comprou') ls = ls.filter(jaComprou);
+    else if (A.cliente === 'historico') ls = ls.filter(temHist);
     return ls.sort(ordenar(null));
   }
 
@@ -1105,7 +1149,7 @@
       <div class="filtros-linha">
         <select class="input" data-adm="resp"><option value="todos">Todas as atendentes</option><option value="__sem" ${A.resp === '__sem' ? 'selected' : ''}>Sem responsável</option>${S.usuarios.map((u) => `<option value="${u.id}" ${A.resp === u.id ? 'selected' : ''}>${esc(u.nome)}</option>`).join('')}</select>
         <select class="input" data-adm="classe">${sel('classe', 'todos', 'Ranking: todos')}${Object.entries(CLASSIF).sort((a, b) => b[1].ordem - a[1].ordem).map(([k, v]) => sel('classe', k, v.ico + ' ' + v.rot)).join('')}</select>
-        <select class="input" data-adm="cliente">${sel('cliente', 'todos', 'Todos')}${sel('cliente', 'diag', 'Com diagnóstico')}${sel('cliente', 'sem_diag', 'Sem diagnóstico')}${sel('cliente', 'sim', '⛔ Já são clientes')}${sel('cliente', 'nao', 'Não são clientes')}</select>
+        <select class="input" data-adm="cliente">${sel('cliente', 'todos', 'Todos')}${sel('cliente', 'diag', 'Com diagnóstico')}${sel('cliente', 'sem_diag', 'Sem diagnóstico')}${sel('cliente', 'ja_comprou', '★ Já compraram da 4blue')}${sel('cliente', 'historico', 'Já passaram por outra campanha')}${sel('cliente', 'sim', '⛔ Já são clientes')}${sel('cliente', 'nao', 'Não são clientes')}</select>
         <select class="input" data-adm="origem"><option value="todos">Todas as origens</option>${origens.map((o) => `<option value="${esc(o)}" ${A.origem === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>
       </div>
       ${botoesOrdem()}
@@ -1391,6 +1435,21 @@
         </section>
 
         <section class="card bloco">
+          <h3>Campanhas anteriores do comercial</h3>
+          <p class="small muted" style="margin:-8px 0 12px">O sistema lê a aba <b>Leads</b> dos outros sistemas de tratativas e traz para o card: por quais campanhas a pessoa passou, como cada uma terminou, quem atendeu e o perfil que o comercial já coletou (cargo, empresa, cidade). Quem foi perdido como <b>"Já é Mamber"</b> entra aqui como cliente ativo.</p>
+          <div class="field"><label>Planilhas (uma por linha: ID ; apelido)</label>
+            <textarea class="input" id="cfg-hist" style="min-height:110px;font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(c.hist_planilhas || '')}</textarea>
+            <p class="hint">O ID é o trecho do link entre <code>/d/</code> e <code>/edit</code>. A conta que roda o script precisa ter acesso a cada planilha.</p></div>
+          <label class="check"><input type="checkbox" id="cfg-hist-seguir" ${c.hist_seguir_atendente ? 'checked' : ''}><span><b>Devolver o lead para quem já atendeu:</b> se a pessoa já foi atendida por alguém que está no time, ela volta para a mesma atendente em vez de entrar no rodízio.</span></label>
+          <p class="small muted">Última leitura: <b>${c.hist_ultima_sinc ? fmtData(c.hist_ultima_sinc) : 'nunca'}</b></p>
+          <div class="row" style="flex-wrap:wrap;margin-top:10px">
+            <button class="btn line sm" data-act="salvar-config" data-loading=" Salvando...">Salvar</button>
+            <button class="btn ouro sm" data-act="sinc-hist" data-loading=" Cruzando...">${I.refresh}Cruzar agora</button>
+          </div>
+          <div id="res-hist" style="margin-top:10px"></div>
+        </section>
+
+        <section class="card bloco">
           <h3>Marcar em lote</h3>
           <p class="small muted" style="margin:-8px 0 12px">Suba uma planilha com e-mails ou telefones para marcar a jornada de várias pessoas de uma vez — útil com a lista de quem assistiu a abertura.</p>
           <div class="row" style="flex-wrap:wrap">
@@ -1421,13 +1480,14 @@
       NOME_SISTEMA: g('cfg-nome'), DATA_ABERTURA: g('cfg-data'), HORA_ABERTURA: g('cfg-hora'),
       DIAGNOSTICO_URL: g('cfg-diag-url'), INSCRICAO_URL: g('cfg-insc-url'), LIVE_URL: g('cfg-live-url'),
       HOTMART_PRODUTOS: g('cfg-prods'), DIAG_PLANILHA_ID: g('cfg-diag-id'), DIAG_ABA: g('cfg-diag-aba'),
-      BASE_CLIENTES_ID: g('cfg-base-id')
+      BASE_CLIENTES_ID: g('cfg-base-id'), HIST_PLANILHAS: g('cfg-hist')
     };
     Object.keys(mapa).forEach((k) => { if (mapa[k] !== undefined) cfg[k] = mapa[k]; });
     if (ck('cfg-dist') !== undefined) cfg.DISTRIBUICAO_AUTO = ck('cfg-dist') ? 'SIM' : 'NAO';
     if (ck('cfg-gerencia') !== undefined) cfg.QUEM_GERENCIA = ck('cfg-gerencia') ? 'todos' : 'coordenador';
     if (ck('cfg-teste') !== undefined) cfg.HOTMART_MODO_TESTE = ck('cfg-teste') ? 'SIM' : 'NAO';
     if (ck('cfg-diag-criar') !== undefined) cfg.DIAG_CRIAR_LEAD = ck('cfg-diag-criar') ? 'SIM' : 'NAO';
+    if (ck('cfg-hist-seguir') !== undefined) cfg.HIST_SEGUIR_ATENDENTE = ck('cfg-hist-seguir') ? 'SIM' : 'NAO';
     S.config = await api('admin.config', { config: cfg });
     toast('Ajustes salvos.', 'ok');
     await carregar();
@@ -1644,6 +1704,11 @@
       ['Confirmou abertura', (l) => (l.confirmou_live === 'sim' ? 'SIM' : '')],
       ['Assistiu abertura', (l) => (l.participou === 'sim' ? 'SIM' : '')],
       ['Já é cliente ativo', (l) => (ehCliente(l) ? 'SIM' : '')],
+      ['Campanhas anteriores', (l) => l.hist_campanhas || ''],
+      ['Já comprou da 4blue', (l) => (jaComprou(l) ? 'SIM' : '')],
+      ['Quem já atendeu', (l) => l.hist_atendente || ''],
+      ['Último desfecho', (l) => l.hist_motivo || ''],
+      ['Histórico comercial', (l) => historicoDe(l).map((h) => h.c + ': ' + (ROT_STATUS_ANTIGO[h.s] || h.s) + (h.m ? ' (' + h.m + ')' : '')).join(' | ')],
       ['Cliente MDL', (l) => l.cliente_mdl], ['Cliente Iluminismo', (l) => l.cliente_ilu],
       ['Eventos anteriores', (l) => eventosDe(l).map((e) => e.e).join(' | ')],
       ['Comprou', (l) => (l.status === 'ganho' ? 'SIM' : '')],
