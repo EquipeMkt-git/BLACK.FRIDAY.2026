@@ -9,7 +9,7 @@
  * fictícios e nada é salvo. Serve para conferir o visual antes de ligar tudo.
  */
 window.APP_CONFIG = {
-  API_URL: '',
+  API_URL: 'https://script.google.com/macros/s/AKfycbwXY4Mi6Z-mflekPCx4vAmEpINIrNjPOaT0-gzjwmfoHKuI2leRFlsxyoRX7cVpVnC9/exec',
   NOME: 'Black Friday Vitalícia 2026',
   ATUALIZAR_SEGUNDOS: 60
 };
