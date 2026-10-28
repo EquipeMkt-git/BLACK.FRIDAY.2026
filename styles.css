@@ -44,6 +44,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: 0; background: none; }
 a { color: var(--ouro); }
 svg { flex: none; }
+/* rede de segurança: ícone sem tamanho definido não pode ocupar a largura toda */
+svg:not([width]) { max-width: 48px; max-height: 48px; }
+.marca svg.simbolo { max-width: none; max-height: none; }
 
 /* ---------- Texto com preenchimento em ouro ----------
    Nome próprio para não colidir com .btn.ouro, que é fundo dourado. */
@@ -347,7 +350,9 @@ main { flex: 1; padding: 16px 16px 96px; max-width: 1400px; width: 100%; margin:
 .kcol-n { background: var(--card-2); border-radius: 99px; padding: 1px 8px; font-size: 11.5px; font-weight: 800; color: var(--texto-2); }
 .kcol-inst summary { font-size: 11.5px; color: var(--ouro); cursor: pointer; margin-top: 6px; }
 .kcol-inst ul { margin: 6px 0 0 15px; font-size: 11.5px; color: var(--texto-2); }
-.kcol-body { padding: 0 9px 10px; overflow-y: auto; display: grid; gap: 9px; }
+/* max-content: o card tem overflow:hidden e, sem isso, a grade espremia
+   todos os cards para caber na altura da coluna (só aparecia o topo do nome) */
+.kcol-body { padding: 0 9px 10px; overflow-y: auto; display: grid; gap: 9px; grid-auto-rows: max-content; align-content: start; min-height: 0; }
 .kcol-body .lead { padding: 11px; }
 
 /* ---------- Painel ---------- */
@@ -405,7 +410,8 @@ main { flex: 1; padding: 16px 16px 96px; max-width: 1400px; width: 100%; margin:
 .info b { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
 .acoes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; margin-bottom: 16px; }
 .marco { display: flex; align-items: center; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--borda); flex-wrap: wrap; }
-.marco .nm { flex: 1; min-width: 110px; font-size: 13.5px; font-weight: 600; }
+.marco .nm { flex: 1; min-width: 110px; font-size: 13.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px; }
+.marco .nm svg { width: 16px; height: 16px; color: var(--ouro); }
 .marco .ops { display: flex; gap: 5px; flex-wrap: wrap; }
 .marco .ops button { padding: 5px 10px; border-radius: 8px; font-size: 11.5px; font-weight: 700; background: var(--card-2); border: 1.5px solid var(--borda); color: var(--texto-2); }
 .marco .ops button.on { background: var(--grad-ouro); color: #150F00; border-color: transparent; }

@@ -51,6 +51,12 @@
     if (n.length === 10) return `(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`;
     return t || '—';
   }
+  /* Número para o wa.me. Com 10 ou 11 dígitos é DDD + número e falta o 55 —
+     inclusive DDD 55 (RS), que antes era confundido com o código do país. */
+  function waNumero(t) {
+    const d = soDig(t).replace(/^0+/, '');
+    return d.length <= 11 ? '55' + d : d;
+  }
   function dt(s) { const d = new Date(String(s || '').replace(' ', 'T')); return isNaN(d) ? null : d; }
   function fmtData(s) {
     const d = dt(s); if (!d) return '—';
@@ -206,7 +212,8 @@
         </div>
       </div>`;
     const sh = $sheet.querySelector('.sheet');
-    $sheet.querySelector('[data-x]').addEventListener('click', fecharSheet);
+    // o X do topo e os "Cancelar" do rodapé
+    $sheet.querySelectorAll('[data-x]').forEach((b) => b.addEventListener('click', fecharSheet));
     $sheet.querySelector('[data-fechar]').addEventListener('click', (e) => { if (e.target.dataset.fechar !== undefined) fecharSheet(); });
     if (onMount) onMount(sh);
   }
@@ -248,6 +255,7 @@
         S.modo = souCoord() ? 'coord' : 'usuario';
         S.view = souCoord() ? 'painel' : 'novo';
         if (souCoord()) await carregar(); else render();
+        ligarAtualizacao();
       });
     });
   }
@@ -311,7 +319,18 @@
     });
     const av = document.querySelector('.avatar.topo');
     if (av) av.addEventListener('click', abrirPerfil);
+    renderMain();
+  }
+
+  /* Liga os eventos UMA vez só. Antes eles eram ligados a cada render() — e o
+     render roda a cada atualização automática —, então um clique virava vários:
+     o botão Lista/Kanban alternava duas vezes e "não fazia nada", o Mostrar mais
+     pulava de 60 em 60 várias vezes etc. O #sheet (detalhe do lead, mensagens)
+     fica fora do #app e não tinha ninguém ouvindo: WhatsApp, Comprou, Perdido,
+     fase e jornada dentro do card aberto não funcionavam. */
+  function ligarEventos() {
     $app.addEventListener('click', acoesGlobais);
+    $sheet.addEventListener('click', acoesGlobais);
     $app.addEventListener('input', (ev) => {
       const b = ev.target.closest('[data-busca]');
       if (b) { S.busca = b.value; S.limite = 60; S._focoBusca = true; renderMain(); }
@@ -320,7 +339,12 @@
       const s = ev.target.closest('[data-adm]');
       if (s) { S.adm[s.dataset.adm] = s.value; S.limite = 60; renderMain(); }
     });
-    renderMain();
+  }
+
+  let relogioAtualizacao = null;
+  function ligarAtualizacao() {
+    if (relogioAtualizacao || DEMO || !(CFG.ATUALIZAR_SEGUNDOS > 0)) return;
+    relogioAtualizacao = setInterval(() => { if (S.token && !document.hidden && !$sheet.innerHTML) carregar().catch(() => {}); }, CFG.ATUALIZAR_SEGUNDOS * 1000);
   }
 
   function contagemRegressiva() {
@@ -550,7 +574,7 @@
     if (S.links.diagnostico) acoes.push(`<button class="btn line" data-act="copiar-diag">${I.copiar}Link do diagnóstico</button>`);
 
     const info = [
-      ['Telefone', telFmt(l.telefone)], ['E-mail', l.email || '—'],
+      ['Telefone', telFmt(l.telefone)], ['E-mail', /@/.test(l.email || '') ? l.email : '—'],
       ['Empresa', l.empresa || '—'], ['Cargo', l.cargo || '—'],
       ['Cidade', [l.cidade, l.estado].filter(Boolean).join(' / ') || '—'],
       ['Atendente', l.responsavel_nome || '—'],
@@ -738,8 +762,7 @@
         sh.querySelector('#wa-ir').addEventListener('click', () => {
           const m = lista.find((x) => x.id === escolhida);
           const txt = m ? monta(m.texto) : '';
-          const d = soDig(l.telefone);
-          const url = 'https://wa.me/' + (d.startsWith('55') ? d : '55' + d) + (txt ? '?text=' + encodeURIComponent(txt) : '');
+          const url = 'https://wa.me/' + waNumero(l.telefone) + (txt ? '?text=' + encodeURIComponent(txt) : '');
           // abre na mesma interação do clique, senão o navegador bloqueia
           if (window.LW_ABRIR_URL) window.LW_ABRIR_URL(url); else window.open(url, '_blank', 'noopener');
           api('lead.tratativa', { id: l.id, mensagem: m ? m.titulo : '' })
@@ -1027,6 +1050,7 @@
 
   /* ------------------------------------------------------------- início */
   (async function iniciar() {
+    ligarEventos();
     let tk = null;
     try { tk = localStorage.getItem('bf_token'); } catch (e) { tk = null; }
     if (DEMO) { telaLogin(''); return; }
@@ -1037,7 +1061,7 @@
       S.modo = souCoord() ? 'coord' : 'usuario';
       S.view = souCoord() ? 'painel' : 'novo';
       if (souCoord()) await carregar(); else render();
-      if (CFG.ATUALIZAR_SEGUNDOS > 0) setInterval(() => { if (!document.hidden && !$sheet.innerHTML) carregar().catch(() => {}); }, CFG.ATUALIZAR_SEGUNDOS * 1000);
+      ligarAtualizacao();
     } catch (e) { telaLogin(''); }
   })();
 
@@ -1527,9 +1551,11 @@
       empresa: /empresa|company|orgname|negocio/, cargo: /cargo|funcao|position/,
       cidade: /cidade|city/, estado: /^estado$|^uf$|state/
     };
+    // nome exato primeiro: "Email" ganha de "Emails enviados", que vem antes em exportações do Active
+    const exatos = { nome: ['nome', 'nome completo', 'name', 'full name'], email: ['email', 'e-mail', 'e mail'], telefone: ['telefone', 'whatsapp', 'celular', 'phone'] };
     const map = {};
     Object.keys(regras).forEach((k) => {
-      let achou = -1;
+      let achou = h.findIndex((x) => (exatos[k] || []).includes(x));
       h.forEach((x, i) => { if (achou < 0 && regras[k].test(x)) achou = i; });
       map[k] = achou;
     });
