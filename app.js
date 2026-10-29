@@ -120,6 +120,9 @@
   };
   const classifDe = (l) => CLASSIF[l.classificacao] || null;
   const ehCliente = (l) => !!l.cliente_ativo;
+  // cliente ativo em aberto não passa pelas fases: vai direto para a coluna "Já é cliente" do funil
+  const clienteEmAberto = (l) => ehCliente(l) && (l.status === 'novo' || l.status === 'tratativa');
+  const rotuloCliente = (l) => l.cliente_rotulo || String(l.cliente_mdl || l.cliente_ilu || '').split('·')[0].trim();
   const temDiag = (l) => l.diagnostico === 'feito' || !!l.diag_indice;
   const temHist = (l) => Number(l.hist_campanhas || 0) > 0;
   const jaComprou = (l) => l.hist_comprou === 'sim';
@@ -279,8 +282,8 @@
     }
     const meu = (st) => S.leads.filter((l) => l.status === st && (st === 'novo' || l.responsavel_id === S.user.id)).length;
     const itens = [
-      { id: 'novo', rot: 'Inscritos', ic: I.contatos, n: meu('novo') },
-      { id: 'funil', rot: 'Funil', ic: I.funil, n: meu('tratativa') },
+      { id: 'novo', rot: 'Inscritos', ic: I.contatos, n: S.leads.filter((l) => l.status === 'novo' && !ehCliente(l)).length },
+      { id: 'funil', rot: 'Funil', ic: I.funil, n: baseFunil().length },
       { id: 'ganho', rot: 'Compraram', ic: I.trofeu, n: meu('ganho') },
       { id: 'perdido', rot: 'Perdidos', ic: I.xcirc, n: meu('perdido') }
     ];
@@ -395,7 +398,7 @@
     if (f === 'ja_comprou') return lista.filter(jaComprou);
     if (f === 'historico') return lista.filter(temHist);
     if (f === 'clientes') return lista.filter(ehCliente);
-    if (f === 'parados') return lista.filter((l) => horasDesde(l.ultima_acao || l.inicio_tratativa) > 48);
+    if (f === 'parados') return lista.filter((l) => l.status === 'tratativa' && horasDesde(l.ultima_acao || l.inicio_tratativa) > 48);
     return lista;
   }
   function ordenar(st) {
@@ -413,10 +416,12 @@
   function viewLista(st) {
     const uid = S.user.id;
     const meus = S.leads.filter((l) => l.responsavel_id === uid);
-    const base = S.leads.filter((l) => l.status === st && (st === 'novo' || l.responsavel_id === uid));
+    // quem já é cliente sai dos Inscritos e fica na coluna "Já é cliente" do Funil
+    const base = S.leads.filter((l) => l.status === st && (st === 'novo' ? !ehCliente(l) : l.responsavel_id === uid));
     const chipsDef = [['todos', 'Todos'], ['quentes', '🔥 Quentes e MQL+'], ['ja_comprou', '★ Já compraram da 4blue'],
       ['diagnostico', 'Fizeram o diagnóstico'], ['sem_diag', 'Sem diagnóstico'], ['historico', 'Já passaram por outra campanha'],
-      ['confirmados', 'Confirmaram a abertura'], ['clientes', '⛔ Já são clientes']];
+      ['confirmados', 'Confirmaram a abertura']];
+    if (st !== 'novo') chipsDef.push(['clientes', '⛔ Já são clientes']);
     if (st === 'tratativa') chipsDef.push(['parados', 'Parados +48h']);
     const chips = chipsDef.map(([k, r]) => `<button class="chip ${S.filtro === k ? 'on' : ''}" data-chip="${k}">${r}<span class="n">${aplicaFiltroChip(aplicaBusca(base), k).length}</span></button>`).join('');
     const lista = aplicaFiltroChip(aplicaBusca(base), S.filtro).sort(ordenar(st));
@@ -438,12 +443,19 @@
         : vazio(st)}`;
   }
 
-  function viewFunil() {
+  function baseFunil() {
     const uid = S.user.id;
-    const base = S.leads.filter((l) => l.status === 'tratativa' && (S.modo === 'coord' || l.responsavel_id === uid));
+    return S.leads.filter((l) => (l.status === 'tratativa' || clienteEmAberto(l)) &&
+      (S.modo === 'coord' || l.responsavel_id === uid || (l.status === 'novo' && !l.responsavel_id)));
+  }
+
+  function viewFunil() {
+    const base = baseFunil();
     const lista = aplicaFiltroChip(aplicaBusca(base), S.filtro);
     const fases = fasesAtivas();
-    const semFase = lista.filter((l) => !faseDe(l));
+    const clientes = lista.filter(ehCliente);
+    const emFase = lista.filter((l) => !ehCliente(l));
+    const semFase = emFase.filter((l) => !faseDe(l));
     const ord = ordenar('tratativa');
     const chipsDef = [['todos', 'Todos'], ['quentes', '🔥 Quentes e MQL+'], ['ja_comprou', '★ Já compraram'],
       ['diagnostico', 'Com diagnóstico'], ['historico', 'Já passaram por outra campanha'],
@@ -458,17 +470,22 @@
       <div class="chips">${chipsDef.map(([k, r]) => `<button class="chip ${S.filtro === k ? 'on' : ''}" data-chip="${k}">${r}<span class="n">${aplicaFiltroChip(aplicaBusca(base), k).length}</span></button>`).join('')}</div>`;
     if (!lista.length) return cab + vazio('tratativa');
     if (S.funilLista) return cab + botoesOrdem() + `<div class="lista">${lista.sort(ordenar('tratativa')).map(cardLead).join('')}</div>`;
-    const col = (f, leads) => `
-      <section class="kcol" style="border-top-color:${f ? esc(f.cor) : 'var(--borda-2)'}">
+    const col = (f, leads, extra) => `
+      <section class="kcol ${extra ? extra.cls : ''}" style="border-top-color:${f ? esc(f.cor) : extra ? extra.cor : 'var(--borda-2)'}">
         <header class="kcol-head">
-          <div class="kcol-tit"><b>${f ? esc(f.nome) : 'Sem fase'}</b><span class="kcol-n">${leads.length}</span></div>
-          ${f && f.instrucoes ? `<details class="kcol-inst"><summary>O que fazer aqui</summary><ul>${String(f.instrucoes).split('\n').filter(Boolean).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
+          <div class="kcol-tit"><b>${f ? esc(f.nome) : extra ? extra.nome : 'Sem fase'}</b><span class="kcol-n">${leads.length}</span></div>
+          ${f && f.instrucoes ? `<details class="kcol-inst"><summary>O que fazer aqui</summary><ul>${String(f.instrucoes).split('\n').filter(Boolean).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>`
+            : extra ? `<details class="kcol-inst"><summary>O que fazer aqui</summary><ul>${extra.inst.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
         </header>
         <div class="kcol-body">${leads.length ? leads.sort(ord).map(cardLead).join('') : '<p class="muted small" style="padding:8px 2px">Ninguém aqui.</p>'}</div>
       </section>`;
     return cab + `<div class="kanban">
-      ${fases.map((f) => col(f, lista.filter((l) => l.fase_id === f.id))).join('')}
+      ${fases.map((f) => col(f, emFase.filter((l) => l.fase_id === f.id))).join('')}
       ${semFase.length ? col(null, semFase) : ''}
+      ${col(null, clientes, { cls: 'kcol-cliente', cor: 'var(--vermelho)', nome: '⛔ Já é cliente', inst: [
+        'Já é Mamber do MDL ou Iluminista ativo: tem um produto maior e mais completo que o Combo.',
+        'Não oferte o Combo e não gaste tempo de tratativa aqui.',
+        'Se a pessoa NÃO é cliente, abra o card e marque "Não é cliente" — ela volta para o funil.'] })}
     </div>`;
   }
 
@@ -536,7 +553,7 @@
       : l.status === 'tratativa' ? 'Última ação ' + rel(l.ultima_acao || l.inicio_tratativa)
         : fmtData(l.fechado_em || l.atualizado_em);
     const faixa = cliente
-      ? `<div class="faixa alerta">${I.alerta}<span>Já é cliente — não ofertar</span><span class="dir">${esc(String(l.cliente_mdl || l.cliente_ilu).split('·')[0].trim())}</span></div>`
+      ? `<div class="faixa alerta">${I.alerta}<span>Já é cliente — não ofertar</span><span class="dir">${esc(rotuloCliente(l))}</span></div>`
       : l.status === 'ganho'
         ? `<div class="faixa ouro">${I.trofeu}<span>Comprou o Combo Vitalício</span><span class="dir">${esc(l.responsavel_nome || '')}</span></div>`
         : '';
@@ -595,9 +612,10 @@
           ${pode || st === 'novo' ? `<button class="btn line sm icon" data-act="editar" data-id="${l.id}" aria-label="Editar">${I.editar}</button>` : ''}
         </div>
         ${!pode && st !== 'novo' ? `<p class="muted small">Este lead está com ${esc(l.responsavel_nome)}.</p>` : ''}
-        ${ehCliente(l) ? `<div class="caixa erro" style="margin-bottom:14px"><b>⛔ Já é cliente ativo da 4blue</b><div class="small" style="margin-top:4px">${esc(l.cliente_mdl || l.cliente_ilu)}. O Combo Vitalício é menor e menos completo do que o que essa pessoa já tem — não faz sentido ofertar.</div></div>` : ''}
+        ${ehCliente(l) ? `<div class="caixa erro" style="margin-bottom:14px"><b>⛔ Já é cliente ativo da 4blue</b><div class="small" style="margin-top:4px">${esc(rotuloCliente(l))}. O Combo Vitalício é menor e menos completo do que o que essa pessoa já tem — não faz sentido ofertar.</div></div>` : ''}
         ${acoes.length ? `<div class="acoes-grid">${acoes.join('')}</div>` : ''}
-        ${pode && st === 'tratativa' ? blocoFase(l) : ''}
+        ${pode || (st === 'novo' && !l.responsavel_id) ? blocoCliente(l) : ''}
+        ${pode && st === 'tratativa' && !ehCliente(l) ? blocoFase(l) : ''}
         ${pode && st !== 'novo' ? blocoMarcos(l) : ''}
         ${blocoRanking(l)}
         ${blocoDiagnostico(l)}
@@ -704,6 +722,26 @@
           </div>
           <div class="small muted" style="margin-top:4px">${esc([x.m, x.a, x.q].filter(Boolean).join(' · '))}</div>
         </div>`).join('')}`;
+  }
+
+  /** Marcação à mão de cliente MDL / Iluminista — vale mais que a base de clientes. */
+  function blocoCliente(l) {
+    const manual = String(l.cliente_manual || '');
+    const tem = (k) => manual.split('+').includes(k);
+    const valorAoClicar = (k) => {
+      if (k === 'nao') return manual === 'nao' ? '' : 'nao';
+      const s = new Set(manual === 'nao' ? [] : manual.split('+').filter(Boolean));
+      if (s.has(k)) s.delete(k); else s.add(k);
+      return ['mdl', 'ilu'].filter((x) => s.has(x)).join('+');
+    };
+    const bt = (k, rot) => `<button data-act="cliente" data-id="${l.id}" data-valor="${valorAoClicar(k)}" class="${tem(k) ? 'on' : ''}">${rot}</button>`;
+    const origem = manual ? 'Marcado à mão pela equipe.'
+      : ehCliente(l) ? 'Veio da base de clientes da 4blue.' : 'A base de clientes não marca esta pessoa como cliente ativo.';
+    return `<div class="secao">Já é cliente da 4blue?</div>
+      <div class="marco"><span class="nm">${I.alerta} Cliente ativo</span>
+        <span class="ops">${bt('mdl', 'Mamber MDL')}${bt('ilu', 'Iluminista')}${bt('nao', 'Não é cliente')}
+        ${manual ? `<button data-act="cliente" data-id="${l.id}" data-valor="">seguir a base</button>` : ''}</span></div>
+      <p class="hint" style="margin-bottom:4px">${origem} Cliente ativo sai das fases e vai para a coluna "Já é cliente" do funil.</p>`;
   }
 
   function blocoFase(l) {
@@ -963,6 +1001,12 @@
       case 'marco': comBotao(el, async () => {
         await api('lead.marco', { id, campo: el.dataset.campo, valor: el.dataset.valor });
         await carregar(); abrirLead(id);
+      }); break;
+      case 'cliente': comBotao(el, async () => {
+        await api('lead.cliente', { id, valor: el.dataset.valor });
+        await carregar(); abrirLead(id);
+        const l = S.leads.find((x) => x.id === id);
+        if (l) toast(ehCliente(l) ? 'Marcado como cliente — foi para a coluna "Já é cliente".' : 'Não é cliente — segue no funil normalmente.', 'ok');
       }); break;
       case 'reabrir': comBotao(el, async () => { await api('lead.reabrir', { id }); fecharSheet(); toast('Lead reaberto.', 'ok'); await carregar(); }); break;
       case 'anotar': comBotao(el, async () => {

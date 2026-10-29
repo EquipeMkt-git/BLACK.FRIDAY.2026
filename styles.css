@@ -345,6 +345,8 @@ main { flex: 1; padding: 16px 16px 96px; max-width: 1400px; width: 100%; margin:
   display: flex; flex-direction: column; max-height: 74vh;
 }
 .kcol-head { padding: 11px 12px 9px; }
+.kcol.kcol-cliente { background: linear-gradient(180deg, rgba(240,82,82,.07), var(--card) 140px); }
+.kcol.kcol-cliente .kcol-tit b { color: #FFADAD; }
 .kcol-tit { display: flex; align-items: center; gap: 8px; }
 .kcol-tit b { font-size: 13.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kcol-n { background: var(--card-2); border-radius: 99px; padding: 1px 8px; font-size: 11.5px; font-weight: 800; color: var(--texto-2); }

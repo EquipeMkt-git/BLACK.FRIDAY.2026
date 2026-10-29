@@ -165,7 +165,10 @@
   const pctN = (v) => { const n = numero(v); return n > 1 && n <= 100 ? Math.round(n) : Math.round(n * 100); };
   const curto = (v) => { const n = numero(v); return n >= 1000000 ? 'R$ ' + (Math.round(n / 100000) / 10) + ' mi' : n >= 1000 ? 'R$ ' + Math.round(n / 1000) + ' mil' : 'R$ ' + Math.round(n); };
   function ativo(t) { const s = String(t || '').split('·')[0]; return !!s && /ativ/i.test(s) && !/ex |cancel|inativ/i.test(s); }
-  const clienteAtivo = (l) => ativo(l.cliente_mdl) || ativo(l.cliente_ilu);
+  const clienteAtivo = (l) => (l.cliente_manual === 'nao' ? false : /mdl|ilu/.test(l.cliente_manual || '') || ativo(l.cliente_mdl) || ativo(l.cliente_ilu));
+  const rotuloCliente = (l) => (/mdl|ilu/.test(l.cliente_manual || '')
+    ? [/mdl/.test(l.cliente_manual) ? 'Mamber MDL' : '', /ilu/.test(l.cliente_manual) ? 'Iluminista' : ''].filter(Boolean).join(' + ') + ' · marcado à mão'
+    : clienteAtivo(l) ? String(l.cliente_mdl || l.cliente_ilu).split('·')[0].trim() : '');
   function eventos(l) { try { const a = JSON.parse(l.eventos || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 
   function pontuar(l) {
@@ -209,7 +212,7 @@
     const s = Math.round(p);
     const temDados = !!(l.diag_indice || l.diag_faturamento || l.cliente_mdl || l.cliente_ilu || eventos(l).length || l.hist_campanhas);
     const faixa = s >= 80 ? 'quente' : s >= 60 ? 'mql_mais' : s >= 40 ? 'mql' : s >= 20 ? 'viavel' : s >= 5 ? 'baixo' : 'fora';
-    return { score: s, classificacao: clienteAtivo(l) ? 'cliente' : (temDados ? faixa : 'sem_dados'), score_motivos: m.join(' · '), cliente_ativo: clienteAtivo(l) };
+    return { score: s, classificacao: clienteAtivo(l) ? 'cliente' : (temDados ? faixa : 'sem_dados'), score_motivos: m.join(' · '), cliente_ativo: clienteAtivo(l), cliente_rotulo: rotuloCliente(l) };
   }
   const comScore = (ls) => ls.map((l) => Object.assign({}, l, pontuar(l)));
 
@@ -281,6 +284,7 @@
       l.ultima_acao = agora();
       return copia(l);
     },
+    'lead.cliente': (b) => { const l = achar(b.id); l.cliente_manual = b.valor || ''; return copia(l); },
     'lead.fase': (b) => { const l = achar(b.id); l.fase_id = b.fase_id; l.fase_em = agora(); l.ultima_acao = agora(); if (l.status === 'novo') l.status = 'tratativa'; return copia(l); },
     'lead.obs': (b) => { const l = achar(b.id); H.unshift({ data: agora(), lead_id: l.id, usuario_id: usuarioAtual.id, usuario_nome: usuarioAtual.nome, acao: 'nota', detalhe: b.texto }); return copia(l); },
     'lead.ganho': (b) => {
