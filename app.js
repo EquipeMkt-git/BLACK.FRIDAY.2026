@@ -401,9 +401,12 @@
     if (f === 'parados') return lista.filter((l) => l.status === 'tratativa' && horasDesde(l.ultima_acao || l.inicio_tratativa) > 48);
     return lista;
   }
+  // Parado há mais tempo primeiro (última ação mais antiga no topo da fila).
+  const tParado = (l) => { const d = dt(l.ultima_acao || l.inicio_tratativa || l.fase_em); return d ? d.getTime() : 0; };
+  const ordParado = (a, b) => tParado(a) - tParado(b);
   function ordenar(st) {
     if (S.ordem === 'ranking') return (a, b) => (b.score || 0) - (a.score || 0) || String(b.criado_em).localeCompare(String(a.criado_em));
-    if (st === 'tratativa') return (a, b) => String(a.ultima_acao || a.inicio_tratativa).localeCompare(String(b.ultima_acao || b.inicio_tratativa));
+    if (st === 'tratativa') return ordParado;
     return (a, b) => String(b.criado_em).localeCompare(String(a.criado_em));
   }
   const botoesOrdem = () => `
@@ -456,7 +459,7 @@
     const clientes = lista.filter(ehCliente);
     const emFase = lista.filter((l) => !ehCliente(l));
     const semFase = emFase.filter((l) => !faseDe(l));
-    const ord = ordenar('tratativa');
+    const ord = ordParado;  // no Kanban cada fase é uma fila: quem está parado há mais tempo fica no topo
     const chipsDef = [['todos', 'Todos'], ['quentes', '🔥 Quentes e MQL+'], ['ja_comprou', '★ Já compraram'],
       ['diagnostico', 'Com diagnóstico'], ['historico', 'Já passaram por outra campanha'],
       ['confirmados', 'Confirmaram'], ['clientes', '⛔ Já são clientes'], ['parados', 'Parados +48h']];
