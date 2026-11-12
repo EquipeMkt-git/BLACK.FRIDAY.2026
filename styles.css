@@ -352,6 +352,17 @@ main { flex: 1; padding: 16px 16px 96px; max-width: 1400px; width: 100%; margin:
 .kcol-n { background: var(--card-2); border-radius: 99px; padding: 1px 8px; font-size: 11.5px; font-weight: 800; color: var(--texto-2); }
 .kcol-inst summary { font-size: 11.5px; color: var(--ouro); cursor: pointer; margin-top: 6px; }
 .kcol-inst ul { margin: 6px 0 0 15px; font-size: 11.5px; color: var(--texto-2); }
+/* Mover vários (lote) */
+.kcol-mover { display: inline-flex; align-items: center; gap: 5px; margin-top: 7px; padding: 4px 9px; font: inherit; font-size: 11.5px; font-weight: 700; color: var(--ouro); background: transparent; border: 1px solid var(--borda-2); border-radius: 99px; cursor: pointer; }
+.kcol-mover:hover { border-color: var(--ouro); }
+.kcol-mover svg { width: 13px; height: 13px; }
+.mv-todos { margin: 0 0 8px; }
+.mv-lista { max-height: 42vh; overflow-y: auto; border: 1px solid var(--borda); border-radius: 11px; background: var(--card-2); }
+.mv-item { display: flex; gap: 10px; align-items: center; padding: 9px 11px; border-bottom: 1px solid var(--borda); cursor: pointer; }
+.mv-item:last-child { border-bottom: 0; }
+.mv-item input { width: 19px; height: 19px; accent-color: var(--ouro); flex: none; }
+.mv-nome { display: flex; flex-direction: column; min-width: 0; }
+.mv-nome b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* max-content: o card tem overflow:hidden e, sem isso, a grade espremia
    todos os cards para caber na altura da coluna (só aparecia o topo do nome) */
 .kcol-body { padding: 0 9px 10px; overflow-y: auto; display: grid; gap: 9px; grid-auto-rows: max-content; align-content: start; min-height: 0; }

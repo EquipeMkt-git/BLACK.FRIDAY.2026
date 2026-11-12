@@ -286,6 +286,11 @@
     },
     'lead.cliente': (b) => { const l = achar(b.id); l.cliente_manual = b.valor || ''; return copia(l); },
     'lead.fase': (b) => { const l = achar(b.id); l.fase_id = b.fase_id; l.fase_em = agora(); l.ultima_acao = agora(); if (l.status === 'novo') l.status = 'tratativa'; return copia(l); },
+    'lead.faseLote': (b) => {
+      let movidos = 0;
+      (b.ids || []).forEach((id) => { const l = achar(id); if (!l) return; l.fase_id = b.fase_id; l.fase_em = agora(); l.ultima_acao = agora(); if (l.status === 'novo') l.status = 'tratativa'; movidos++; });
+      return { movidos, ignorados: (b.ids || []).length - movidos };
+    },
     'lead.obs': (b) => { const l = achar(b.id); H.unshift({ data: agora(), lead_id: l.id, usuario_id: usuarioAtual.id, usuario_nome: usuarioAtual.nome, acao: 'nota', detalhe: b.texto }); return copia(l); },
     'lead.ganho': (b) => {
       const l = achar(b.id);

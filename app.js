@@ -473,15 +473,23 @@
       <div class="chips">${chipsDef.map(([k, r]) => `<button class="chip ${S.filtro === k ? 'on' : ''}" data-chip="${k}">${r}<span class="n">${aplicaFiltroChip(aplicaBusca(base), k).length}</span></button>`).join('')}</div>`;
     if (!lista.length) return cab + vazio('tratativa');
     if (S.funilLista) return cab + botoesOrdem() + `<div class="lista">${lista.sort(ordenar('tratativa')).map(cardLead).join('')}</div>`;
-    const col = (f, leads, extra) => `
+    // guarda os cards de cada coluna (na ordem da tela) para o "Mover vários"
+    S._colunas = {};
+    const col = (f, leads, extra) => {
+      leads.sort(ord);
+      const chave = f ? f.id : extra ? '' : '__semfase';
+      if (!extra) S._colunas[chave] = { nome: f ? f.nome : 'Sem fase', ids: leads.map((l) => l.id) };
+      return `
       <section class="kcol ${extra ? extra.cls : ''}" style="border-top-color:${f ? esc(f.cor) : extra ? extra.cor : 'var(--borda-2)'}">
         <header class="kcol-head">
           <div class="kcol-tit"><b>${f ? esc(f.nome) : extra ? extra.nome : 'Sem fase'}</b><span class="kcol-n">${leads.length}</span></div>
+          ${!extra && leads.length ? `<button class="kcol-mover" data-act="mover-varios" data-col="${esc(chave)}">${I.seta}Mover vários</button>` : ''}
           ${f && f.instrucoes ? `<details class="kcol-inst"><summary>O que fazer aqui</summary><ul>${String(f.instrucoes).split('\n').filter(Boolean).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>`
             : extra ? `<details class="kcol-inst"><summary>O que fazer aqui</summary><ul>${extra.inst.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
         </header>
-        <div class="kcol-body">${leads.length ? leads.sort(ord).map(cardLead).join('') : '<p class="muted small" style="padding:8px 2px">Ninguém aqui.</p>'}</div>
+        <div class="kcol-body">${leads.length ? leads.map(cardLead).join('') : '<p class="muted small" style="padding:8px 2px">Ninguém aqui.</p>'}</div>
       </section>`;
+    };
     return cab + `<div class="kanban">
       ${fases.map((f) => col(f, emFase.filter((l) => l.fase_id === f.id))).join('')}
       ${semFase.length ? col(null, semFase) : ''}
@@ -899,6 +907,65 @@
     });
   }
 
+  // Mover vários cards de uma fase para outra de uma vez só
+  function abrirMoverVarios(chave) {
+    const c = S._colunas && S._colunas[chave];
+    if (!c) return;
+    const leads = c.ids.map((id) => S.leads.find((x) => x.id === id)).filter(Boolean);
+    if (!leads.length) return;
+    const destinos = fasesAtivas().filter((f) => f.id !== chave);
+    let destino = '';
+    abrirSheet({
+      titulo: 'Mover vários — ' + c.nome,
+      largo: true,
+      corpo: `
+        <p class="small muted" style="margin:0 0 10px">1. Marque os cards (os parados há mais tempo estão no topo). 2. Escolha para qual fase vão. 3. Clique em Mover.</p>
+        <label class="check mv-todos"><input type="checkbox" id="mv-todos"><span><b>Selecionar todos</b> (${leads.length})</span></label>
+        <div class="mv-lista">${leads.map((l) => `
+          <label class="mv-item"><input type="checkbox" data-mv="${l.id}">
+            <span class="mv-nome"><b>${esc(l.nome || '—')}</b><span class="small muted">${esc([l.empresa, rel(l.ultima_acao || l.inicio_tratativa)].filter((x) => x && x !== '—').join(' · '))}</span></span>
+          </label>`).join('')}</div>
+        <h3 style="margin:16px 0 8px;font-size:14px">Mover para</h3>
+        ${destinos.map((f) => `
+          <div class="fase-opcao" data-dest="${f.id}">
+            <span class="fase-cor" style="background:${esc(f.cor)}"></span>
+            <div style="flex:1;min-width:0"><b>${esc(f.nome)}</b></div>
+          </div>`).join('')}`,
+      rodape: `<button class="btn line" data-x>Cancelar</button><button class="btn ouro" id="mv-ok" data-loading=" Movendo..." disabled>Mover</button>`,
+      onMount: (sh) => {
+        const caixas = [...sh.querySelectorAll('[data-mv]')];
+        const todos = sh.querySelector('#mv-todos');
+        const ok = sh.querySelector('#mv-ok');
+        const marcados = () => caixas.filter((x) => x.checked).map((x) => x.dataset.mv);
+        const atualiza = () => {
+          const n = marcados().length;
+          todos.checked = n === caixas.length;
+          todos.indeterminate = n > 0 && n < caixas.length;
+          const f = destinos.find((x) => x.id === destino);
+          ok.disabled = !n || !f;
+          ok.textContent = n ? `Mover ${n} card${n > 1 ? 's' : ''}${f ? ' para ' + f.nome : ''}` : 'Mover';
+        };
+        todos.addEventListener('change', () => { caixas.forEach((x) => { x.checked = todos.checked; }); atualiza(); });
+        caixas.forEach((x) => x.addEventListener('change', atualiza));
+        sh.querySelectorAll('[data-dest]').forEach((el) => el.addEventListener('click', () => {
+          destino = el.dataset.dest;
+          sh.querySelectorAll('[data-dest]').forEach((o) => o.classList.toggle('on', o === el));
+          atualiza();
+        }));
+        ok.addEventListener('click', (ev) => comBotao(ev.currentTarget, async () => {
+          const ids = marcados();
+          const r = await api('lead.faseLote', { ids, fase_id: destino });
+          fecharSheet();
+          const n = (r && r.movidos) || 0;
+          const pulou = (r && r.ignorados) || 0;
+          toast(`${n} card${n === 1 ? '' : 's'} movido${n === 1 ? '' : 's'}.` + (pulou ? ` ${pulou} não ${pulou === 1 ? 'pôde' : 'puderam'} ser movido${pulou === 1 ? '' : 's'}.` : ''), pulou ? 'erro' : 'ok');
+          await carregar();
+        }));
+        atualiza();
+      }
+    });
+  }
+
   function abrirFormLead(id) {
     const l = id ? S.leads.find((x) => x.id === id) : null;
     const v = (c) => esc(l ? (l[c] || '') : '');
@@ -988,6 +1055,7 @@
       case 'ganho': abrirGanho(id); break;
       case 'perdido': abrirPerdido(id); break;
       case 'fase': abrirFase(id); break;
+      case 'mover-varios': abrirMoverVarios(el.dataset.col); break;
       case 'editar': abrirFormLead(id); break;
       case 'novo-lead': abrirFormLead(); break;
       case 'ordem': S.ordem = el.dataset.ordem; renderMain(); break;
