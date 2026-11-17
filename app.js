@@ -120,9 +120,33 @@
   };
   const classifDe = (l) => CLASSIF[l.classificacao] || null;
   const ehCliente = (l) => !!l.cliente_ativo;
-  // cliente ativo em aberto não passa pelas fases: vai direto para a coluna "Já é cliente" do funil
-  const clienteEmAberto = (l) => ehCliente(l) && (l.status === 'novo' || l.status === 'tratativa');
   const rotuloCliente = (l) => l.cliente_rotulo || String(l.cliente_mdl || l.cliente_ilu || '').split('·')[0].trim();
+
+  /* ---- desconto, carrinho e bônus da Black ---- */
+  const descontoDe = (l) => (l.desconto && S.links.descontos && S.links.descontos[l.desconto]) || null;
+  const temDesconto = (l) => !!descontoDe(l);
+  // cliente ativo SEM desconto não é público da oferta; com desconto ele compra pelo link do grupo dele
+  const bloqueado = (l) => ehCliente(l) && !temDesconto(l);
+  // cliente bloqueado em aberto não passa pelas fases: vai direto para a coluna "Já é cliente" do funil
+  const clienteEmAberto = (l) => bloqueado(l) && (l.status === 'novo' || l.status === 'tratativa');
+  const ROT_CARRINHO = { abandonou: 'Abandonou o carrinho', aguardando: 'Gerou Pix/boleto e não pagou', recusado: 'Pagamento recusado', expirou: 'Pix/boleto expirou' };
+  const emRecuperacao = (l) => !!l.carrinho && l.status !== 'ganho';
+  const linkCompra = (l) => { const d = descontoDe(l); return (d && d.link) || S.links.compra || ''; };
+  const temBonus = (l, b) => String(l.compra_bonus || l.bonus || '').split(',').includes(b);
+  const diaBonus = () => (S.links.bonus_dia ? fmtDataCurta(S.links.bonus_dia) : '18/11');
+  function bonusInfo() {
+    return {
+      primeiro: ['🥇 1º comprador', 'Reunião individual de Conselho com o Renan'],
+      top: ['📘 ' + (S.links.bonus_primeiros || 15) + ' primeiros', 'Livro autografado: O Manual do Braço Direito'],
+      dia: ['🎟 Comprou em ' + diaBonus(), '2 ingressos VIP para o evento presencial de 2027']
+    };
+  }
+  /** Etiquetas dos bônus de ação rápida a partir de "primeiro,top,dia". */
+  function tagsBonus(bonus) {
+    const info = bonusInfo();
+    return String(bonus || '').split(',').filter((b) => info[b])
+      .map((b) => `<span class="tag bonus" title="${esc(info[b][1])}">${info[b][0]}</span>`).join('');
+  }
   const temDiag = (l) => l.diagnostico === 'feito' || !!l.diag_indice;
   const temHist = (l) => Number(l.hist_campanhas || 0) > 0;
   const jaComprou = (l) => l.hist_comprou === 'sim';
@@ -174,6 +198,7 @@
     if (d.links) S.links = d.links;
     if (d.sistema) S.sistema = d.sistema;
     if (d.pode_gerenciar !== undefined) S.podeGerenciar = d.pode_gerenciar;
+    if (d.total_compradores !== undefined) S.totalCompradores = d.total_compradores;
     S.carregado = true;
   }
 
@@ -275,6 +300,7 @@
       return [
         { id: 'painel', rot: 'Painel', ic: I.painel },
         { id: 'leads', rot: 'Leads', ic: I.leads, n: S.leads.length },
+        { id: 'compradores', rot: 'Compradores', ic: I.trofeu, n: S.totalCompradores },
         { id: 'equipe', rot: 'Equipe', ic: I.equipe },
         { id: 'catalogo', rot: 'Funil e msgs', ic: I.caixa },
         { id: 'ajustes', rot: 'Ajustes', ic: I.ajustes }
@@ -282,7 +308,7 @@
     }
     const meu = (st) => S.leads.filter((l) => l.status === st && (st === 'novo' || l.responsavel_id === S.user.id)).length;
     const itens = [
-      { id: 'novo', rot: 'Inscritos', ic: I.contatos, n: S.leads.filter((l) => l.status === 'novo' && !ehCliente(l)).length },
+      { id: 'novo', rot: 'Inscritos', ic: I.contatos, n: S.leads.filter((l) => l.status === 'novo' && !bloqueado(l)).length },
       { id: 'funil', rot: 'Funil', ic: I.funil, n: baseFunil().length },
       { id: 'ganho', rot: 'Compraram', ic: I.trofeu, n: meu('ganho') },
       { id: 'perdido', rot: 'Perdidos', ic: I.xcirc, n: meu('perdido') }
@@ -373,7 +399,7 @@
     if (!m) return;
     const v = S.view;
     if (S.modo === 'coord') {
-      m.innerHTML = v === 'painel' ? viewPainel() : v === 'leads' ? viewLeadsAdmin()
+      m.innerHTML = v === 'painel' ? viewPainel() : v === 'leads' ? viewLeadsAdmin() : v === 'compradores' ? viewCompradores()
         : v === 'equipe' ? viewEquipe() : v === 'catalogo' ? viewCatalogo() : viewAjustes();
     } else {
       m.innerHTML = v === 'funil' ? viewFunil() : v === 'catalogo' ? viewCatalogo() : viewLista(v);
@@ -398,6 +424,9 @@
     if (f === 'ja_comprou') return lista.filter(jaComprou);
     if (f === 'historico') return lista.filter(temHist);
     if (f === 'clientes') return lista.filter(ehCliente);
+    if (f === 'carrinho') return lista.filter(emRecuperacao);
+    if (f === 'desconto') return lista.filter(temDesconto);
+    if (f === 'b_primeiro' || f === 'b_top' || f === 'b_dia') return lista.filter((l) => temBonus(l, f.slice(2)));
     if (f === 'parados') return lista.filter((l) => l.status === 'tratativa' && horasDesde(l.ultima_acao || l.inicio_tratativa) > 48);
     return lista;
   }
@@ -420,11 +449,13 @@
     const uid = S.user.id;
     const meus = S.leads.filter((l) => l.responsavel_id === uid);
     // quem já é cliente sai dos Inscritos e fica na coluna "Já é cliente" do Funil
-    const base = S.leads.filter((l) => l.status === st && (st === 'novo' ? !ehCliente(l) : l.responsavel_id === uid));
+    const base = S.leads.filter((l) => l.status === st && (st === 'novo' ? !bloqueado(l) : l.responsavel_id === uid));
     const chipsDef = [['todos', 'Todos'], ['quentes', '🔥 Quentes e MQL+'], ['ja_comprou', '★ Já compraram da 4blue'],
       ['diagnostico', 'Fizeram o diagnóstico'], ['sem_diag', 'Sem diagnóstico'], ['historico', 'Já passaram por outra campanha'],
       ['confirmados', 'Confirmaram a abertura']];
-    if (st !== 'novo') chipsDef.push(['clientes', '⛔ Já são clientes']);
+    if (st !== 'ganho') chipsDef.splice(1, 0, ['carrinho', '🛒 Carrinho abandonado'], ['desconto', '🏷 Têm desconto']);
+    if (st === 'ganho') chipsDef.splice(1, chipsDef.length, ['b_primeiro', bonusInfo().primeiro[0]], ['b_top', bonusInfo().top[0]], ['b_dia', bonusInfo().dia[0]], ['desconto', '🏷 Com desconto']);
+    if (st !== 'novo' && st !== 'ganho') chipsDef.push(['clientes', '⛔ Já são clientes']);
     if (st === 'tratativa') chipsDef.push(['parados', 'Parados +48h']);
     const chips = chipsDef.map(([k, r]) => `<button class="chip ${S.filtro === k ? 'on' : ''}" data-chip="${k}">${r}<span class="n">${aplicaFiltroChip(aplicaBusca(base), k).length}</span></button>`).join('');
     const lista = aplicaFiltroChip(aplicaBusca(base), S.filtro).sort(ordenar(st));
@@ -456,11 +487,11 @@
     const base = baseFunil();
     const lista = aplicaFiltroChip(aplicaBusca(base), S.filtro);
     const fases = fasesAtivas();
-    const clientes = lista.filter(ehCliente);
-    const emFase = lista.filter((l) => !ehCliente(l));
+    const clientes = lista.filter(bloqueado);
+    const emFase = lista.filter((l) => !bloqueado(l));
     const semFase = emFase.filter((l) => !faseDe(l));
     const ord = ordParado;  // no Kanban cada fase é uma fila: quem está parado há mais tempo fica no topo
-    const chipsDef = [['todos', 'Todos'], ['quentes', '🔥 Quentes e MQL+'], ['ja_comprou', '★ Já compraram'],
+    const chipsDef = [['todos', 'Todos'], ['carrinho', '🛒 Carrinho abandonado'], ['desconto', '🏷 Têm desconto'], ['quentes', '🔥 Quentes e MQL+'], ['ja_comprou', '★ Já compraram'],
       ['diagnostico', 'Com diagnóstico'], ['historico', 'Já passaram por outra campanha'],
       ['confirmados', 'Confirmaram'], ['clientes', '⛔ Já são clientes'], ['parados', 'Parados +48h']];
     const cab = `
@@ -523,6 +554,10 @@
       const v = MARCOS_INFO[k].vals[l[k]];
       if (v) t.push(`<span class="tag ${v[1]}" title="${esc(MARCOS_INFO[k].rot)}">${esc(v[0])}</span>`);
     });
+    if (emRecuperacao(l)) t.push(`<span class="tag carrinho" title="${esc(l.carrinho_oferta || '')}">🛒 ${esc(ROT_CARRINHO[l.carrinho] || 'Carrinho')} · ${esc(rel(l.carrinho_em))}</span>`);
+    const dsc = descontoDe(l);
+    if (dsc) t.push(`<span class="tag desconto" title="${esc(dsc.rot)}">🏷 Desconto ${esc(dsc.valor)}</span>`);
+    if (l.compra_pos) t.push(`<span class="tag ok" title="${esc(l.compra_oferta || '')}">${l.compra_pos}º comprador</span>` + tagsBonus(l.compra_bonus));
     if (jaComprou(l)) t.push('<span class="tag ok" title="Já comprou da 4blue em outra campanha">★ Já comprou da 4blue</span>');
     else if (temHist(l)) t.push(`<span class="tag info" title="${esc(historicoDe(l).map((h) => h.c + ' — ' + (ROT_STATUS_ANTIGO[h.s] || h.s)).join(' · '))}">Já passou por ${l.hist_campanhas} campanha${Number(l.hist_campanhas) > 1 ? 's' : ''}</span>`);
     if (l.cliente_mdl && !ehCliente(l)) t.push('<span class="tag">Ex-MDL</span>');
@@ -556,14 +591,16 @@
         <button class="btn verde sm icon" data-act="ganho" data-id="${l.id}" aria-label="Comprou">${I.trofeu}</button></div>`;
     } else if (l.status === 'ganho') {
       const vs = vendasDoLead(l.id).filter((v) => v.status === 'ativa');
-      rodape = vs.map((v) => `<div class="mini"><span>${esc(v.produto_nome)}</span><b class="nowrap">${brl(v.valor_total)}</b></div>`).join('');
+      rodape = vs.map((v) => `<div class="mini"><span>${v.pos ? v.pos + 'º · ' : ''}${esc(v.oferta_nome || v.produto_nome)}</span><b class="nowrap">${brl(v.valor_total)}</b></div>`).join('');
     } else if (l.motivo) {
       rodape = `<div class="mini"><span>Motivo</span><b>${esc(l.motivo)}</b></div>`;
     }
     const quando = l.status === 'novo' ? 'Inscreveu-se ' + rel(l.criado_em)
       : l.status === 'tratativa' ? 'Última ação ' + rel(l.ultima_acao || l.inicio_tratativa)
         : fmtData(l.fechado_em || l.atualizado_em);
-    const faixa = cliente
+    const faixa = cliente && temDesconto(l) && l.status !== 'ganho'
+      ? `<div class="faixa desconto">🏷<span>Cliente com desconto — ${esc(descontoDe(l).valor)}</span><span class="dir">${esc(rotuloCliente(l))}</span></div>`
+      : cliente && l.status !== 'ganho'
       ? `<div class="faixa alerta">${I.alerta}<span>Já é cliente — não ofertar</span><span class="dir">${esc(rotuloCliente(l))}</span></div>`
       : l.status === 'ganho'
         ? `<div class="faixa ouro">${I.trofeu}<span>Comprou o Combo Vitalício</span><span class="dir">${esc(l.responsavel_nome || '')}</span></div>`
@@ -599,6 +636,7 @@
       acoes.push(`<button class="btn line" data-act="perdido" data-id="${l.id}">${I.xcirc}Perdido</button>`);
     }
     if (pode && (st === 'perdido' || st === 'descartado')) acoes.push(`<button class="btn line" data-act="reabrir" data-id="${l.id}">${I.refresh}Reabrir</button>`);
+    if (st !== 'ganho' && !bloqueado(l) && linkCompra(l)) acoes.push(`<button class="btn ouro" data-act="copiar-compra" data-id="${l.id}">${I.copiar}Link de compra</button>`);
     if (S.links.diagnostico) acoes.push(`<button class="btn line" data-act="copiar-diag">${I.copiar}Link do diagnóstico</button>`);
 
     const info = [
@@ -623,10 +661,11 @@
           ${pode || st === 'novo' ? `<button class="btn line sm icon" data-act="editar" data-id="${l.id}" aria-label="Editar">${I.editar}</button>` : ''}
         </div>
         ${!pode && st !== 'novo' ? `<p class="muted small">Este lead está com ${esc(l.responsavel_nome)}.</p>` : ''}
-        ${ehCliente(l) ? `<div class="caixa erro" style="margin-bottom:14px"><b>⛔ Já é cliente ativo da 4blue</b><div class="small" style="margin-top:4px">${esc(rotuloCliente(l))}. O Combo Vitalício é menor e menos completo do que o que essa pessoa já tem — não faz sentido ofertar.</div></div>` : ''}
+        ${bloqueado(l) ? `<div class="caixa erro" style="margin-bottom:14px"><b>⛔ Já é cliente ativo da 4blue</b><div class="small" style="margin-top:4px">${esc(rotuloCliente(l))}. O Combo Vitalício é menor e menos completo do que o que essa pessoa já tem — não faz sentido ofertar.</div></div>` : ''}
         ${acoes.length ? `<div class="acoes-grid">${acoes.join('')}</div>` : ''}
+        ${blocoCompra(l)}
         ${pode || (st === 'novo' && !l.responsavel_id) ? blocoCliente(l) : ''}
-        ${pode && st === 'tratativa' && !ehCliente(l) ? blocoFase(l) : ''}
+        ${pode && st === 'tratativa' && !bloqueado(l) ? blocoFase(l) : ''}
         ${pode && st !== 'novo' ? blocoMarcos(l) : ''}
         ${blocoRanking(l)}
         ${blocoDiagnostico(l)}
@@ -672,8 +711,8 @@
     });
   }
 
-  const ROT_ACAO = { criado: 'cadastrou o lead', tratativa: 'iniciou a conversa', contato: 'mandou mensagem', marco: 'marcou', fase: 'mudou a fase', ganho: 'registrou a venda', perdido: 'marcou como perdido', editado: 'editou', nota: 'anotou', atribuido: 'passou o lead', liberado: 'devolveu para a fila', distribuicao: 'distribuiu leads', equipe: 'mexeu na equipe', config: 'mudou os ajustes', excluido: 'excluiu' };
-  const corAcao = (a) => ({ ganho: '#22C55E', perdido: '#F05252', marco: '#E8B931', fase: '#60A5FA', criado: '#9AA0A8', nota: '#A78BFA' }[a] || '#6B7078');
+  const ROT_ACAO = { criado: 'cadastrou o lead', tratativa: 'iniciou a conversa', contato: 'mandou mensagem', marco: 'marcou', fase: 'mudou a fase', ganho: 'registrou a venda', perdido: 'marcou como perdido', editado: 'editou', nota: 'anotou', atribuido: 'passou o lead', liberado: 'devolveu para a fila', distribuicao: 'distribuiu leads', carrinho: 'Hotmart: carrinho', equipe: 'mexeu na equipe', config: 'mudou os ajustes', excluido: 'excluiu' };
+  const corAcao = (a) => ({ ganho: '#22C55E', perdido: '#F05252', marco: '#E8B931', fase: '#60A5FA', criado: '#9AA0A8', nota: '#A78BFA', carrinho: '#FB923C' }[a] || '#6B7078');
 
   function blocoRanking(l) {
     const cl = classifDe(l);
@@ -735,6 +774,29 @@
         </div>`).join('')}`;
   }
 
+  /** Carrinho para recuperar, desconto e bônus de ação rápida. */
+  function blocoCompra(l) {
+    const p = [];
+    if (emRecuperacao(l)) {
+      p.push(`<div class="caixa carrinho"><b>🛒 ${esc(ROT_CARRINHO[l.carrinho] || 'Começou a compra')} ${esc(rel(l.carrinho_em))}</b>
+        <div class="small" style="margin-top:4px">${esc(l.carrinho_oferta || 'Black Friday Vitalícia')} · ${esc(fmtData(l.carrinho_em))}. A pessoa já decidiu comprar e travou em algum ponto: chame no WhatsApp, pergunte o que aconteceu e mande o link de novo.</div></div>`);
+    }
+    const d = descontoDe(l);
+    if (d && l.status !== 'ganho') {
+      p.push(`<div class="caixa desconto"><b>🏷 Tem direito a desconto: ${esc(d.valor)}</b>
+        <div class="small" style="margin-top:4px">${esc(d.rot)}. Mande o link exclusivo, não o da página de vendas.</div>
+        <div class="copiar" style="margin-top:8px"><input class="input" readonly value="${esc(d.link)}"><button class="btn ouro sm" data-act="copiar-compra" data-id="${l.id}">Copiar</button></div></div>`);
+    }
+    if (l.compra_pos) {
+      const info = bonusInfo();
+      const bs = String(l.compra_bonus || '').split(',').filter((b) => info[b]);
+      p.push(`<div class="caixa ok"><b>${l.compra_pos}º comprador da Black</b> · ${esc(l.compra_oferta || '')}
+        ${bs.length ? `<div class="small" style="margin-top:6px">Bônus de ação rápida:</div><ul class="small" style="margin:4px 0 0 16px">${bs.map((b) => `<li><b>${info[b][0]}</b> — ${esc(info[b][1])}</li>`).join('')}</ul>`
+          : '<div class="small muted" style="margin-top:4px">Sem bônus de ação rápida.</div>'}</div>`);
+    }
+    return p.length ? `<div style="display:grid;gap:8px;margin-bottom:6px">${p.join('')}</div>` : '';
+  }
+
   /** Marcação à mão de cliente MDL / Iluminista — vale mais que a base de clientes. */
   function blocoCliente(l) {
     const manual = String(l.cliente_manual || '');
@@ -752,7 +814,7 @@
       <div class="marco"><span class="nm">${I.alerta} Cliente ativo</span>
         <span class="ops">${bt('mdl', 'Mamber MDL')}${bt('ilu', 'Iluminista')}${bt('nao', 'Não é cliente')}
         ${manual ? `<button data-act="cliente" data-id="${l.id}" data-valor="">seguir a base</button>` : ''}</span></div>
-      <p class="hint" style="margin-bottom:4px">${origem} Cliente ativo sai das fases e vai para a coluna "Já é cliente" do funil.</p>`;
+      <p class="hint" style="margin-bottom:4px">${origem} Cliente ativo sem desconto sai das fases e vai para a coluna "Já é cliente" do funil; com desconto, segue no funil com o link exclusivo.</p>`;
   }
 
   function blocoFase(l) {
@@ -789,6 +851,7 @@
       .replace(/\{link_diagnostico\}/g, S.links.diagnostico || '')
       .replace(/\{link_inscricao\}/g, S.links.inscricao || '')
       .replace(/\{link_live\}/g, S.links.live || '')
+      .replace(/\{link_compra\}/g, linkCompra(l))
       .replace(/\{data_abertura\}/g, fmtDataCurta(S.links.data_abertura))
       .replace(/\{hora_abertura\}/g, S.links.hora_abertura || '');
     abrirSheet({
@@ -1095,6 +1158,7 @@
         if (!confirm('Excluir este lead de vez? Não dá para desfazer.')) return;
         comBotao(el, async () => { await api('admin.lead.excluir', { id }); fecharSheet(); toast('Lead excluído.', 'ok'); await carregar(); });
         break;
+      case 'copiar-compra': { const l = S.leads.find((x) => x.id === id); if (l) copiar(linkCompra(l), temDesconto(l) ? 'Link com desconto copiado.' : 'Link da página de vendas copiado.'); break; }
       case 'copiar-diag': copiar(S.links.diagnostico, 'Link do diagnóstico copiado.'); break;
       case 'copiar-campo': { const alvo = document.getElementById(el.dataset.alvo); if (alvo) copiar(alvo.value, 'Copiado.'); break; }
       case 'distribuir': comBotao(el, distribuir); break;
@@ -1116,6 +1180,28 @@
               <div class="small" style="margin-top:4px">${(r.planilhas || []).map((p) => esc(p.campanha) + ': ' + (p.erro ? '⚠ ' + esc(p.erro) : p.linhas + ' leads')).join(' · ')}</div>
               ${r.devolvidos_a_quem_atendeu ? `<div class="small" style="margin-top:4px">${r.devolvidos_a_quem_atendeu} lead(s) devolvido(s) para quem já atendia a pessoa.</div>` : ''}</div>`;
       }); break;
+      case 'sinc-desconto': comBotao(el, async () => {
+        const r = await api('admin.descontos.sincronizar', {});
+        await carregar();
+        const box = document.getElementById('res-desconto');
+        if (box) box.innerHTML = r.erro ? `<div class="caixa erro">${esc(r.erro)}</div>`
+          : `<div class="caixa ok">Leu ${r.linhas} pessoas na lista · ${r.com_desconto} leads com desconto · ${r.atualizados} mudaram agora${r.fora_do_sistema ? ' · ' + r.fora_do_sistema + ' da lista não estão no sistema' : ''}${r.sem_tipo ? ' · ' + r.sem_tipo + ' sem tipo (entraram como Mamber/ILU/GFL)' : ''}.</div>`;
+      }); break;
+      case 'sinc-hotmart': comBotao(el, async () => {
+        const r = await api('admin.hotmart.sincronizar', {});
+        await carregar();
+        const box = document.getElementById('res-hotmart');
+        if (box) box.innerHTML = r.erro ? `<div class="caixa erro">${esc(r.erro)}</div>`
+          : `<div class="caixa ok">Leu ${r.lidas} vendas na Hotmart · ${r.novas} novas registradas · ${r.ja_estavam} já estavam${r.reembolsos ? ' · ' + r.reembolsos + ' reembolsos' : ''}.</div>`;
+      }); break;
+      case 'salvar-cred-hotmart': comBotao(el, async () => {
+        const v = (k) => (document.getElementById(k) || {}).value || '';
+        if (!v('hm-id') && !v('hm-segredo') && !v('hm-basic')) throw new Error('Preencha as credenciais da Hotmart.');
+        const r = await api('admin.hotmart.credenciais', { credenciais: { id: v('hm-id'), segredo: v('hm-segredo'), basic: v('hm-basic') } });
+        toast(r.hotmart_api ? 'Credenciais salvas. Já pode conferir as vendas.' : 'Salvo, mas ainda falta alguma credencial.', r.hotmart_api ? 'ok' : 'erro');
+        await carregar();
+      }); break;
+      case 'exportar-compradores': exportarCompradores(); break;
       case 'sinc-clientes': comBotao(el, async () => {
         const r = await api('admin.clientes.sincronizar', {});
         await carregar();
@@ -1214,6 +1300,8 @@
         <div><b class="num">${leads.filter((l) => l.confirmou_live === 'sim').length}</b><span>Confirmaram a abertura</span></div>
         <div><b class="num">${leads.filter(jaComprou).length}</b><span>Já compraram da 4blue</span></div>
         <div class="destaque"><b class="num">${leads.filter((l) => l.status === 'ganho').length}</b><span>Compraram</span></div>
+        <div><b class="num">${leads.filter(emRecuperacao).length}</b><span>🛒 Carrinho para recuperar</span></div>
+        <div><b class="num">${leads.filter((l) => temDesconto(l) && l.status !== 'ganho').length}</b><span>🏷 Com desconto (sem comprar)</span></div>
         <div class="destaque"><b class="num">${brlCurto(faturado)}</b><span>Faturado</span></div>
       </div>
       <div class="grid-painel">
@@ -1253,6 +1341,89 @@
       </div>`;
   }
 
+  /* ------------------------------------------------- compradores da Black */
+  // ordem de compra (1º, 2º...) e bônus vêm do servidor, calculados sobre todas as vendas
+  function vendasCompradores() {
+    const f = S.filtro;
+    let vs = S.vendas.filter((v) => (f === 'reembolsadas' ? v.status !== 'ativa' : v.status === 'ativa'));
+    if (f === 'b_primeiro' || f === 'b_top' || f === 'b_dia') vs = vs.filter((v) => temBonus(v, f.slice(2)));
+    if (f.startsWith('of:')) vs = vs.filter((v) => (v.oferta_nome || v.produto_nome) === f.slice(3));
+    const q = norm(S.busca).trim();
+    if (q) vs = vs.filter((v) => norm(v.lead_nome).includes(q) || norm(v.email).includes(q) || norm(v.transacao).includes(q));
+    return vs.sort((a, b) => (a.pos || 9999) - (b.pos || 9999) || String(a.aprovada_em || a.data).localeCompare(String(b.aprovada_em || b.data)));
+  }
+
+  function viewCompradores() {
+    const ativas = S.vendas.filter((v) => v.status === 'ativa');
+    const conta = (b) => ativas.filter((v) => temBonus(v, b) && v.pos).length;
+    const ofertas = {};
+    ativas.forEach((v) => {
+      const k = v.oferta_nome || v.produto_nome || 'Sem oferta';
+      ofertas[k] = ofertas[k] || { n: 0, total: 0 };
+      ofertas[k].n++; ofertas[k].total += num(v.valor_total);
+    });
+    const primeiro = ativas.find((v) => v.pos === 1);
+    const info = bonusInfo();
+    const chipsDef = [['todos', 'Todos', ativas.length], ['b_primeiro', info.primeiro[0], conta('primeiro')],
+      ['b_top', info.top[0], conta('top')], ['b_dia', info.dia[0], conta('dia')]]
+      .concat(Object.keys(ofertas).map((k) => ['of:' + k, k, ofertas[k].n]))
+      .concat([['reembolsadas', 'Reembolsadas', S.vendas.filter((v) => v.status !== 'ativa').length]]);
+    const vs = vendasCompradores();
+    return `
+      <div class="page-head"><h2>Compradores da Black</h2>
+        <div class="acoes"><button class="btn sm line" data-act="exportar-compradores">${I.download}CSV</button></div></div>
+      <div class="resumo" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+        <div class="destaque"><b class="num">${S.totalCompradores || 0}</b><span>Compradores</span></div>
+        <div class="destaque"><b class="num">${brlCurto(ativas.reduce((s, v) => s + num(v.valor_total), 0))}</b><span>Faturado</span></div>
+        <div><b class="num" style="font-size:16px">${primeiro ? esc(primeiro.lead_nome) : '—'}</b><span>🥇 1º comprador</span></div>
+        <div><b class="num">${conta('dia')}</b><span>${esc(info.dia[0].replace('🎟 ', ''))}</span></div>
+      </div>
+      <div class="grid-painel" style="margin-bottom:14px">
+        <section class="card bloco"><h3>Por oferta</h3>
+          ${Object.keys(ofertas).length ? Object.entries(ofertas).sort((a, b) => b[1].n - a[1].n).map(([k, o]) => `
+            <div class="bar-linha"><div class="bar-top"><span>${esc(k)}</span><span>${o.n} · ${brlCurto(o.total)}</span></div>
+              <div class="barra"><i style="width:${Math.max(2, Math.round((o.n / (ativas.length || 1)) * 100))}%"></i></div></div>`).join('') : '<p class="muted small">Nenhuma venda ainda.</p>'}
+        </section>
+        <section class="card bloco"><h3>Bônus de ação rápida</h3>
+          ${['primeiro', 'top', 'dia'].map((b) => `<div class="mini" style="margin-bottom:6px"><span><b>${info[b][0]}</b> — ${esc(info[b][1])}</span><b class="nowrap">${conta(b)}</b></div>`).join('')}
+          <p class="hint">A ordem é pela hora da aprovação na Hotmart. Reembolso tira a pessoa da fila e quem vem atrás sobe.</p>
+        </section>
+      </div>
+      <div class="busca">${I.busca}<input class="input" data-busca placeholder="Buscar nome, e-mail ou transação" value="${esc(S.busca)}"></div>
+      <div class="chips">${chipsDef.map(([k, r, n]) => `<button class="chip ${S.filtro === k ? 'on' : ''}" data-chip="${esc(k)}">${esc(r)}<span class="n">${n}</span></button>`).join('')}</div>
+      ${vs.length ? `<div class="lista">${vs.map((v) => `
+        <article class="card lead comprador">
+          <div class="lead-top" ${S.leads.some((l) => l.id === v.lead_id) ? `data-act="abrir" data-id="${esc(v.lead_id)}"` : ''}>
+            <div class="pos">${v.pos ? v.pos + 'º' : '—'}</div>
+            <div class="lead-main"><h3>${esc(v.lead_nome || v.email || '(sem nome)')}</h3>
+              <div class="meta">${esc(v.oferta_nome || v.produto_nome || '')} · ${brl(v.valor_total)}${v.parcelas ? ' em ' + esc(v.parcelas) + 'x' : ''}</div>
+              <div class="meta">${esc(fmtData(v.aprovada_em || v.data))} · ${esc(v.usuario_nome || '')}${v.sck ? ' · ' + esc(v.sck) : ''}</div></div>
+            ${v.status !== 'ativa' ? '<span class="status-pill st-perdido">Reembolsada</span>' : ''}
+          </div>
+          ${v.bonus ? `<div class="tags">${tagsBonus(v.bonus)}</div>` : ''}
+        </article>`).join('')}</div>`
+        : '<div class="vazio">' + I.trofeu + '<p>Nenhuma compra com esse filtro. As vendas entram sozinhas pela Hotmart.</p></div>'}`;
+  }
+
+  function exportarCompradores() {
+    const info = bonusInfo();
+    const vs = vendasCompradores();
+    const lead = (id) => S.leads.find((l) => l.id === id) || {};
+    const cols = [['Ordem', (v) => v.pos || ''], ['Nome', (v) => v.lead_nome], ['E-mail', (v) => v.email || lead(v.lead_id).email],
+      ['WhatsApp', (v) => telFmt(lead(v.lead_id).telefone)], ['Oferta', (v) => v.oferta_nome || v.produto_nome],
+      ['Valor', (v) => v.valor_total], ['Parcelas', (v) => v.parcelas], ['Aprovada em', (v) => v.aprovada_em || v.data],
+      ['Bônus', (v) => String(v.bonus || '').split(',').filter((b) => info[b]).map((b) => info[b][0].replace(/^\S+ /, '') + ': ' + info[b][1]).join(' | ')],
+      ['Atendente', (v) => v.usuario_nome], ['Transação', (v) => v.transacao], ['SCK', (v) => v.sck], ['Status', (v) => v.status]];
+    const cel = (x) => { const s = String(x == null ? '' : x); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const txt = '﻿' + [cols.map((c) => cel(c[0])).join(';')].concat(vs.map((v) => cols.map((c) => cel(c[1](v))).join(';'))).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv;charset=utf-8' }));
+    a.download = `black-friday-compradores-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast(vs.length + ' compradores exportados', 'ok');
+  }
+
   function leadsFiltradosAdmin() {
     const A = S.adm;
     let ls = aplicaBusca(S.leads);
@@ -1266,6 +1437,8 @@
     else if (A.cliente === 'sem_diag') ls = ls.filter((l) => !temDiag(l));
     else if (A.cliente === 'ja_comprou') ls = ls.filter(jaComprou);
     else if (A.cliente === 'historico') ls = ls.filter(temHist);
+    else if (A.cliente === 'carrinho') ls = ls.filter(emRecuperacao);
+    else if (A.cliente === 'desconto') ls = ls.filter(temDesconto);
     return ls.sort(ordenar(null));
   }
 
@@ -1288,7 +1461,7 @@
       <div class="filtros-linha">
         <select class="input" data-adm="resp"><option value="todos">Todas as atendentes</option><option value="__sem" ${A.resp === '__sem' ? 'selected' : ''}>Sem responsável</option>${S.usuarios.map((u) => `<option value="${u.id}" ${A.resp === u.id ? 'selected' : ''}>${esc(u.nome)}</option>`).join('')}</select>
         <select class="input" data-adm="classe">${sel('classe', 'todos', 'Ranking: todos')}${Object.entries(CLASSIF).sort((a, b) => b[1].ordem - a[1].ordem).map(([k, v]) => sel('classe', k, v.ico + ' ' + v.rot)).join('')}</select>
-        <select class="input" data-adm="cliente">${sel('cliente', 'todos', 'Todos')}${sel('cliente', 'diag', 'Com diagnóstico')}${sel('cliente', 'sem_diag', 'Sem diagnóstico')}${sel('cliente', 'ja_comprou', '★ Já compraram da 4blue')}${sel('cliente', 'historico', 'Já passaram por outra campanha')}${sel('cliente', 'sim', '⛔ Já são clientes')}${sel('cliente', 'nao', 'Não são clientes')}</select>
+        <select class="input" data-adm="cliente">${sel('cliente', 'todos', 'Todos')}${sel('cliente', 'diag', 'Com diagnóstico')}${sel('cliente', 'sem_diag', 'Sem diagnóstico')}${sel('cliente', 'ja_comprou', '★ Já compraram da 4blue')}${sel('cliente', 'historico', 'Já passaram por outra campanha')}${sel('cliente', 'carrinho', '🛒 Carrinho abandonado')}${sel('cliente', 'desconto', '🏷 Têm desconto')}${sel('cliente', 'sim', '⛔ Já são clientes')}${sel('cliente', 'nao', 'Não são clientes')}</select>
         <select class="input" data-adm="origem"><option value="todos">Todas as origens</option>${origens.map((o) => `<option value="${esc(o)}" ${A.origem === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>
       </div>
       ${botoesOrdem()}
@@ -1382,7 +1555,7 @@
           </article>`).join('')}</div>`
       : c === 'mensagens' ? `
         <div class="page-head"><h2 style="font-size:16px">Mensagens</h2><div class="acoes"><button class="btn sm ouro" data-act="nova-msg">${I.mais}Mensagem</button></div></div>
-        <p class="muted small" style="margin-bottom:12px">Use <code>{primeiro_nome}</code>, <code>{usuario}</code>, <code>{empresa}</code>, <code>{link_diagnostico}</code>, <code>{data_abertura}</code> e <code>{hora_abertura}</code>.</p>
+        <p class="muted small" style="margin-bottom:12px">Use <code>{primeiro_nome}</code>, <code>{usuario}</code>, <code>{empresa}</code>, <code>{link_diagnostico}</code>, <code>{link_compra}</code> (página do comercial ou o link com desconto da pessoa), <code>{data_abertura}</code> e <code>{hora_abertura}</code>.</p>
         <div class="lista">${S.mensagens.map((m) => {
           const f = S.fases.find((x) => x.id === m.fase_id);
           return `<article class="card lead">
@@ -1442,7 +1615,7 @@
       corpo: `
         <div class="field"><label>Título *</label><input class="input" id="m-titulo" value="${esc(m ? m.titulo : '')}"></div>
         <div class="field"><label>Texto *</label><textarea class="input" id="m-texto" style="min-height:150px">${esc(m ? m.texto : '')}</textarea>
-          <p class="hint">Variáveis: {primeiro_nome} {nome} {usuario} {empresa} {link_diagnostico} {link_live} {data_abertura} {hora_abertura}</p></div>
+          <p class="hint">Variáveis: {primeiro_nome} {nome} {usuario} {empresa} {link_diagnostico} {link_compra} {link_live} {data_abertura} {hora_abertura}</p></div>
         <div class="row">
           <div class="field"><label>Fase</label><select class="input" id="m-fase"><option value="">Todas as fases</option>
             ${fasesOrdenadasUI().map((f) => `<option value="${f.id}" ${m && m.fase_id === f.id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
@@ -1530,19 +1703,58 @@
 
         <section class="card bloco">
           <h3>Venda — webhook da Hotmart</h3>
-          <p class="small muted" style="margin:-8px 0 12px">Cole no Postback/Webhook da Hotmart. Quando a compra do Combo for aprovada, o lead vira <b>Comprou</b> sozinho e a venda é registrada.</p>
+          <p class="small muted" style="margin:-8px 0 12px">Cole no Webhook da Hotmart (Ferramentas → Webhook, versão 2.0.0), escolhendo os produtos da Black e marcando estes eventos: <b>Compra aprovada</b>, <b>Compra completa</b>, <b>Abandono de carrinho</b>, <b>Boleto/Pix impresso</b>, <b>Compra cancelada</b>, <b>Compra expirada</b>, <b>Compra reembolsada</b> e <b>Chargeback</b>. Compra aprovada vira <b>Comprou</b>; quem começou e não concluiu ganha a etiqueta 🛒 para a atendente recuperar.</p>
           <div class="copiar" style="margin-bottom:12px"><input class="input" readonly id="w-hot" value="${esc(c.webhook_hotmart || '')}"><button class="btn ouro" data-act="copiar-campo" data-alvo="w-hot">Copiar</button></div>
-          <div class="field"><label>Produtos da Hotmart (um por linha: ID ; nome)</label>
-            <textarea class="input" id="cfg-prods" placeholder="1234567;Combo Vitalício de Cursos">${esc(c.hotmart_produtos_txt || '')}</textarea>
-            <p class="hint">Deixe vazio até a oferta subir: enquanto estiver vazio, qualquer compra aprovada é aceita.</p></div>
+          <div class="field"><label>Ofertas da Black (uma por linha: código da oferta ; nome ; tipo)</label>
+            <textarea class="input" id="cfg-ofertas" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(c.hotmart_ofertas_txt || '')}</textarea>
+            <p class="hint">O código é o <code>off=</code> do link de checkout. Tipo: <b>padrao</b>, <b>mdl_ilu_gfl</b> ou <b>bf25</b>. Compra de outra oferta dos produtos da Black também entra, com o código no nome.</p></div>
+          <div class="field"><label>Outros produtos da Hotmart que contam como venda da Black (um por linha: ID ; nome)</label>
+            <textarea class="input" id="cfg-prods" placeholder="1234567;Combo Vitalício de Cursos">${esc(c.hotmart_produtos_txt || '')}</textarea></div>
           <label class="check"><input type="checkbox" id="cfg-teste" ${c.modo_teste ? 'checked' : ''}><span>Aceitar o produto de teste da Hotmart (id 0) — use só para testar o webhook</span></label>
           <button class="btn ouro sm" data-act="salvar-config" data-loading=" Salvando...">Salvar</button>
+          <div class="secao">Conferência pela API da Hotmart</div>
+          <p class="small muted" style="margin:-6px 0 10px">A cada 15 minutos o sistema confere na Hotmart as vendas desde o dia abaixo e registra qualquer uma que o webhook tenha deixado passar. Crie as credenciais em Hotmart → Ferramentas → Credenciais Hotmart e cole aqui: elas ficam guardadas no Apps Script, não na planilha.</p>
+          <p class="small">${c.hotmart_api ? '✅ Credenciais configuradas' : '⚠ Credenciais ainda não configuradas'} · última conferência: <b>${c.hotmart_api_ultima_sinc ? fmtData(c.hotmart_api_ultima_sinc) : 'nunca'}</b></p>
+          <div class="row" style="flex-wrap:wrap">
+            <div class="field" style="min-width:160px"><label>Client ID</label><input class="input" id="hm-id" autocomplete="off"></div>
+            <div class="field" style="min-width:160px"><label>Client Secret</label><input class="input" type="password" id="hm-segredo" autocomplete="off"></div>
+            <div class="field" style="min-width:160px"><label>Basic</label><input class="input" type="password" id="hm-basic" autocomplete="off"></div>
+          </div>
+          <div class="field" style="max-width:220px"><label>Conferir vendas a partir de</label><input class="input" type="date" id="cfg-api-desde" value="${esc(c.hotmart_api_desde || '')}"></div>
+          <div class="row" style="flex-wrap:wrap">
+            <button class="btn line sm" data-act="salvar-config" data-loading=" Salvando...">Salvar a data</button>
+            <button class="btn line sm" data-act="salvar-cred-hotmart" data-loading=" Salvando...">Salvar credenciais</button>
+            <button class="btn ouro sm" data-act="sinc-hotmart" data-loading=" Conferindo...">${I.refresh}Conferir vendas agora</button>
+          </div>
+          <div id="res-hotmart" style="margin-top:10px"></div>
           ${(c.webhooks || []).length ? `<div class="secao">Últimos webhooks recebidos</div>
             <div class="feed">${c.webhooks.map((w) => `
               <div class="feed-item"><span class="feed-dot" style="background:${w.status === 'ok' ? '#22C55E' : w.status === 'erro' ? '#F05252' : '#6B7078'}"></span>
                 <div style="flex:1;min-width:0"><div><b>${esc(w.tipo)}</b> · ${esc(w.identificacao || '—')}</div>
                 <div class="small muted">${esc(w.resultado || w.status)}</div>
                 <div class="quando">${rel(w.recebido_em)}</div></div></div>`).join('')}</div>` : ''}
+        </section>
+
+        <section class="card bloco">
+          <h3>Links de compra, desconto e bônus</h3>
+          <p class="small muted" style="margin:-8px 0 12px">O botão <b>Link de compra</b> no card e a variável <code>{link_compra}</code> das mensagens usam o link certo de cada pessoa: quem está na lista de desconto recebe o link exclusivo; todo o resto, a página de vendas do comercial.</p>
+          <div class="field"><label>Página de vendas do comercial (preço normal)</label><input class="input" id="cfg-link-padrao" value="${esc(c.link_compra_padrao || '')}"></div>
+          <div class="field"><label>Link com desconto — Mambers / Iluministas / Black GFL 2024 (R$ 1.997)</label><input class="input" id="cfg-link-mdl" value="${esc(c.link_desconto_mdl || '')}"></div>
+          <div class="field"><label>Link com desconto — Black Friday 2025 (R$ 997)</label><input class="input" id="cfg-link-bf25" value="${esc(c.link_desconto_bf25 || '')}"></div>
+          <div class="secao">Lista de quem tem desconto</div>
+          <p class="small muted" style="margin:-6px 0 10px">O sistema lê a planilha de hora em hora e marca 🏷 em quem está nela. Precisa de uma coluna de <b>e-mail</b> ou <b>telefone</b>. Para separar os grupos, use uma coluna <b>Tipo</b> (escreva "Mamber", "Iluminista", "GFL 2024" ou "Black 2025") ou uma aba para cada grupo com esses nomes. Sem tipo, a pessoa entra no grupo Mamber/ILU/GFL. Quem sai da planilha perde a etiqueta.</p>
+          <div class="field"><label>ID da planilha de desconto</label><input class="input" id="cfg-desc-id" value="${esc(c.desconto_planilha_id || '')}"></div>
+          <p class="small muted">Última leitura: <b>${c.desconto_ultima_sinc ? fmtData(c.desconto_ultima_sinc) : 'nunca'}</b></p>
+          <div class="secao">Bônus de ação rápida</div>
+          <div class="row">
+            <div class="field"><label>Dia do bônus (ingressos VIP)</label><input class="input" type="date" id="cfg-bonus-dia" value="${esc(c.bonus_dia || '')}"></div>
+            <div class="field"><label>Quantos primeiros ganham o livro</label><input class="input" inputmode="numeric" id="cfg-bonus-n" value="${esc(c.bonus_primeiros || '')}"></div>
+          </div>
+          <div class="row" style="flex-wrap:wrap;margin-top:4px">
+            <button class="btn line sm" data-act="salvar-config" data-loading=" Salvando...">Salvar</button>
+            <button class="btn ouro sm" data-act="sinc-desconto" data-loading=" Lendo...">${I.refresh}Ler a lista agora</button>
+          </div>
+          <div id="res-desconto" style="margin-top:10px"></div>
         </section>
 
         <section class="card bloco">
@@ -1619,7 +1831,10 @@
       NOME_SISTEMA: g('cfg-nome'), DATA_ABERTURA: g('cfg-data'), HORA_ABERTURA: g('cfg-hora'),
       DIAGNOSTICO_URL: g('cfg-diag-url'), INSCRICAO_URL: g('cfg-insc-url'), LIVE_URL: g('cfg-live-url'),
       HOTMART_PRODUTOS: g('cfg-prods'), DIAG_PLANILHA_ID: g('cfg-diag-id'), DIAG_ABA: g('cfg-diag-aba'),
-      BASE_CLIENTES_ID: g('cfg-base-id'), HIST_PLANILHAS: g('cfg-hist')
+      BASE_CLIENTES_ID: g('cfg-base-id'), HIST_PLANILHAS: g('cfg-hist'),
+      HOTMART_OFERTAS: g('cfg-ofertas'), HOTMART_API_DESDE: g('cfg-api-desde'), LINK_COMPRA_PADRAO: g('cfg-link-padrao'),
+      LINK_DESCONTO_MDL_ILU_GFL: g('cfg-link-mdl'), LINK_DESCONTO_BF25: g('cfg-link-bf25'), DESCONTO_PLANILHA_ID: g('cfg-desc-id'),
+      BONUS_DIA: g('cfg-bonus-dia'), BONUS_PRIMEIROS: g('cfg-bonus-n')
     };
     Object.keys(mapa).forEach((k) => { if (mapa[k] !== undefined) cfg[k] = mapa[k]; });
     if (ck('cfg-dist') !== undefined) cfg.DISTRIBUICAO_AUTO = ck('cfg-dist') ? 'SIM' : 'NAO';

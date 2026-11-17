@@ -127,12 +127,42 @@
     return l;
   });
 
-  const V = L.filter((l) => l.status === 'ganho').map((l, i) => ({
-    id: 'V' + i, data: l.comprou_em, lead_id: l.id, lead_nome: l.nome,
-    usuario_id: l.responsavel_id, usuario_nome: l.responsavel_nome,
-    produto_nome: 'Combo Vitalício de Cursos', valor_total: '2997', parcelas: '12',
-    forma_pagamento: 'Cartão', transacao: l.transacao, obs: '', status: 'ativa'
-  }));
+  // vendas fictícias no dia do bônus, nas três ofertas da Black
+  const OFERTAS = [['dxsbms9m', 'Black Friday Vitalícia (R$ 2.897)', '2897'], ['x19adxre', 'Mambers / Iluministas / Black GFL 2024 (R$ 1.997)', '1997'], ['ekz44qe5', 'Upgrade Black Friday 2025 (R$ 997)', '997']];
+  const V = L.filter((l) => l.status === 'ganho').map((l, i) => {
+    const o = OFERTAS[i % 3];
+    const quando = '2026-11-18T20:' + String(5 + i * 3).padStart(2, '0') + ':00';
+    l.comprou_em = quando; l.fechado_em = quando; l.valor_venda = o[2];
+    return {
+      id: 'V' + i, data: quando, aprovada_em: quando, lead_id: l.id, lead_nome: l.nome, email: l.email,
+      usuario_id: l.responsavel_id, usuario_nome: l.responsavel_nome,
+      produto_nome: o[1], oferta_nome: o[1], oferta_codigo: o[0], valor_total: o[2], parcelas: '12',
+      forma_pagamento: 'CREDIT_CARD', transacao: l.transacao, obs: '', status: 'ativa', fonte: 'webhook', sck: 'vitalicia_bf26_base_lpa'
+    };
+  });
+  // recuperação de carrinho e lista de desconto
+  L.filter((l) => l.status !== 'ganho').slice(0, 4).forEach((l, i) => {
+    l.carrinho = ['abandonou', 'aguardando', 'recusado', 'abandonou'][i]; l.carrinho_em = atras(0.05 + i * 0.3);
+    l.carrinho_oferta = OFERTAS[0][1];
+  });
+  L.filter((l) => l.cliente_mdl && /ativ/i.test(l.cliente_mdl)).slice(0, 2).forEach((l) => { l.desconto = 'mdl_ilu_gfl'; });
+  L.filter((l) => l.status === 'tratativa' && !l.cliente_mdl).slice(2, 4).forEach((l) => { l.desconto = 'bf25'; });
+
+  function ranking() {
+    const vs = V.filter((v) => v.status === 'ativa').sort((a, b) => String(a.aprovada_em || a.data).localeCompare(String(b.aprovada_em || b.data)));
+    const porLead = {}, porVenda = {};
+    let pos = 0;
+    vs.forEach((v) => {
+      if (porLead[v.lead_id]) { porVenda[v.id] = porLead[v.lead_id]; return; }
+      pos++;
+      const b = [];
+      if (pos === 1) b.push('primeiro');
+      if (pos <= 15) b.push('top');
+      if (String(v.aprovada_em || v.data).slice(0, 10) === '2026-11-18') b.push('dia');
+      porLead[v.lead_id] = porVenda[v.id] = { pos, bonus: b.join(','), oferta: v.oferta_nome || v.produto_nome };
+    });
+    return { porLead, porVenda, total: pos };
+  }
 
   const H = [];
   const hist = (lead, u, acao, det) => H.push({ data: agora(), lead_id: lead, usuario_id: u.id, usuario_nome: u.nome, acao, detalhe: det });
@@ -232,6 +262,13 @@
     base_id: '1ihgdFxaR5cM6xyAECvJ-IORN1dmghRin9gmRFCsHe5I', ultima_sincronizacao: atras(0.05),
     hist_planilhas: '1D8U7pZLpBPo3rjT4GLkOyZcLKmXanqF6heoNjOcukCc;Workshop Pago 07/10\n1QUMW0yUcF2XmuyhEdZmWew0ZN3B_NLkUfK5Udb847d4;Perpétuo\n1C37FGv5fR7pfMSNSe6iM-_YGWe20df_Upg8ko2M6duE;Treinamento 27/10',
     hist_ultima_sinc: atras(0.08), hist_seguir_atendente: true,
+    hotmart_ofertas_txt: 'dxsbms9m;Black Friday Vitalícia (R$ 2.897);padrao\nx19adxre;Mambers / Iluministas / Black GFL 2024 (R$ 1.997);mdl_ilu_gfl\nekz44qe5;Upgrade Black Friday 2025 (R$ 997);bf25',
+    hotmart_api: false, hotmart_api_ultima_sinc: '', hotmart_api_desde: '2026-11-01',
+    link_compra_padrao: 'https://cont.4blue.com.br/pagina-de-vendas-black-friday-comercial/',
+    link_desconto_mdl: 'https://pay.hotmart.com/H108268133T?off=x19adxre&checkoutMode=10&split=12&sck=vitalicia_bf26_mambers_ilu_gfl&hideBillet=1',
+    link_desconto_bf25: 'https://pay.hotmart.com/S108418550F?off=ekz44qe5&checkoutMode=10&split=12&sck=upgrade_bf25_vita&hideBillet=1',
+    desconto_planilha_id: '11uMKES2gvjWQOIMMRZvYww4CQv18wnwNtBq9JspjmUs', desconto_ultima_sinc: '',
+    bonus_dia: '2026-11-18', bonus_primeiros: '15',
     versao: 'demonstração',
     webhooks: [
       { recebido_em: atras(0.01), tipo: 'inscricao', identificacao: 'novo.inscrito@exemplo.com', status: 'ok', resultado: 'Inscrito criado · Noelle Mulek' },
@@ -245,14 +282,22 @@
 
   function base(u) {
     const c = u.perfil === 'coordenador';
+    const rk = ranking();
     return {
       usuario: copia(u),
-      leads: comScore(copia(L.filter((l) => c || l.responsavel_id === u.id || (l.status === 'novo' && !l.responsavel_id)))),
-      vendas: copia(V.filter((v) => c || v.usuario_id === u.id)),
+      leads: comScore(copia(L.filter((l) => c || l.responsavel_id === u.id || (l.status === 'novo' && !l.responsavel_id))))
+        .map((l) => { const x = rk.porLead[l.id]; return x ? Object.assign(l, { compra_pos: x.pos, compra_bonus: x.bonus, compra_oferta: x.oferta }) : l; }),
+      vendas: copia(V.filter((v) => c || v.usuario_id === u.id)).map((v) => { const x = rk.porVenda[v.id]; return x ? Object.assign(v, { pos: x.pos, bonus: x.bonus }) : v; }),
+      total_compradores: rk.total,
       produtos: copia(P), mensagens: copia(M), fases: copia(F),
       sistema: config.nome_sistema,
       pode_gerenciar: c || config.quem_gerencia === 'todos',
-      links: { diagnostico: config.diagnostico_url, inscricao: config.inscricao_url, live: config.live_url, data_abertura: config.data_abertura, hora_abertura: config.hora_abertura },
+      links: { diagnostico: config.diagnostico_url, inscricao: config.inscricao_url, live: config.live_url, data_abertura: config.data_abertura, hora_abertura: config.hora_abertura,
+        compra: config.link_compra_padrao, bonus_dia: config.bonus_dia, bonus_primeiros: 15,
+        descontos: {
+          mdl_ilu_gfl: { rot: 'Mamber / Iluminista / GFL 2024', valor: 'R$ 1.997', link: config.link_desconto_mdl },
+          bf25: { rot: 'Comprou na Black 2025', valor: 'R$ 997', link: config.link_desconto_bf25 }
+        } },
       servidor: agora()
     };
   }
@@ -350,6 +395,9 @@
       if (c.HIST_SEGUIR_ATENDENTE !== undefined) config.hist_seguir_atendente = c.HIST_SEGUIR_ATENDENTE === 'SIM';
       return copia(config);
     },
+    'admin.descontos.sincronizar': () => ({ linhas: 4, com_desconto: L.filter((l) => l.desconto).length, atualizados: 0, sem_tipo: 0, fora_do_sistema: 0 }),
+    'admin.hotmart.sincronizar': () => ({ erro: 'No modo demonstração não há conexão com a Hotmart.' }),
+    'admin.hotmart.credenciais': () => ({ hotmart_api: false }),
     'admin.diagnostico.sincronizar': () => ({ linhas: 18, atualizados: 0, ja_estavam: 18, criados: 0, em: agora() }),
     'admin.clientes.sincronizar': () => ({ pessoas_na_base: 412, leads_atualizados: 0, em: agora() }),
     'admin.historico.sincronizar': () => ({
