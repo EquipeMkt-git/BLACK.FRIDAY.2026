@@ -88,6 +88,13 @@ svg:not([width]) { max-width: 48px; max-height: 48px; }
 }
 .marca .ano { font-size: 11px; color: var(--texto-3); margin-top: 9px; letter-spacing: 2px; }
 
+/* ---------- Login com Google ---------- */
+.login-google { display: flex; justify-content: center; min-height: 44px; }
+.login-senha { margin-top: 18px; border-top: 1px solid var(--borda); padding-top: 12px; }
+.login-senha summary { cursor: pointer; text-align: center; font-size: 13px; color: var(--texto-2); list-style: none; }
+.login-senha summary::-webkit-details-marker { display: none; }
+.login-senha[open] summary { margin-bottom: 12px; }
+
 /* ---------- Formulários ---------- */
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--texto-2); margin-bottom: 6px; }

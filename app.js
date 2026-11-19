@@ -265,30 +265,66 @@
           <div class="ano">ÁREA DE ATENDIMENTO · 2026</div>
         </div>
         ${erro ? `<div class="erro-box">${esc(erro)}</div>` : ''}
+        ${usaGoogle ? `<div id="l-google" class="login-google"><p class="hint">Carregando o botão do Google…</p></div>
+          <p class="hint" style="text-align:center;margin:10px 0 0">Use a sua conta Google <b>@4blue.com.br</b> cadastrada pela coordenação.</p>
+          <details class="login-senha"><summary>Entrar com e-mail e senha</summary>` : ''}
         <form id="f-login">
           <div class="field"><label>E-mail</label><input class="input" type="email" id="l-email" autocomplete="username" required></div>
           <div class="field"><label>Senha</label><input class="input" type="password" id="l-senha" autocomplete="current-password" required></div>
-          <button class="btn ouro bloco" type="submit" data-loading=" Entrando...">Entrar</button>
+          <button class="btn ${usaGoogle ? 'line' : 'ouro'} bloco" type="submit" data-loading=" Entrando...">Entrar</button>
         </form>
+        ${usaGoogle ? '</details>' : ''}
         ${DEMO ? '<p class="hint" style="text-align:center;margin-top:14px">Modo demonstração — entre com qualquer senha usando <b>coord@demo.com</b> (coordenação) ou <b>noelle@demo.com</b> (atendente).</p>' : ''}
       </div></div>`;
     const f = document.getElementById('f-login');
     f.addEventListener('submit', (ev) => {
       ev.preventDefault();
       comBotao(f.querySelector('button'), async () => {
-        const d = await api('login', { email: document.getElementById('l-email').value, senha: document.getElementById('l-senha').value });
-        S.token = d.token;
-        try { localStorage.setItem('bf_token', d.token); } catch (e) { /* modo privado */ }
-        aplicar(d);
-        S.modo = souCoord() ? 'coord' : 'usuario';
-        S.view = souCoord() ? 'painel' : 'novo';
-        if (souCoord()) await carregar(); else render();
-        ligarAtualizacao();
+        entrou(await api('login', { email: document.getElementById('l-email').value, senha: document.getElementById('l-senha').value }));
       });
     });
+    if (usaGoogle) botaoGoogle();
+  }
+
+  const usaGoogle = !DEMO && !!CFG.GOOGLE_CLIENT_ID;
+
+  /** Botão "Fazer login com o Google" (Google Identity Services). */
+  function botaoGoogle() {
+    const alvo = document.getElementById('l-google');
+    if (!alvo) return;
+    const iniciar = () => {
+      google.accounts.id.initialize({ client_id: CFG.GOOGLE_CLIENT_ID, callback: entrarGoogle, ux_mode: 'popup', auto_select: false });
+      alvo.innerHTML = '';
+      google.accounts.id.renderButton(alvo, { theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'pill', locale: 'pt-BR', width: Math.min(320, alvo.clientWidth || 320) });
+    };
+    if (window.google && google.accounts && google.accounts.id) return iniciar();
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = iniciar;
+    s.onerror = () => { alvo.innerHTML = '<p class="hint">Não carregou o login do Google. Recarregue a página ou entre com e-mail e senha.</p>'; };
+    document.head.appendChild(s);
+  }
+
+  async function entrarGoogle(resp) {
+    const alvo = document.getElementById('l-google');
+    if (alvo) alvo.insertAdjacentHTML('afterend', '<p class="hint" id="l-google-msg" style="text-align:center">Entrando…</p>');
+    try { entrou(await api('login.google', { credential: resp.credential })); }
+    catch (e) { telaLogin(e.message || 'Não deu para entrar com o Google.'); }
+  }
+
+  async function entrou(d) {
+    S.token = d.token;
+    try { localStorage.setItem('bf_token', d.token); } catch (e) { /* modo privado */ }
+    aplicar(d);
+    S.modo = souCoord() ? 'coord' : 'usuario';
+    S.view = souCoord() ? 'painel' : 'novo';
+    if (souCoord()) await carregar(); else render();
+    ligarAtualizacao();
   }
 
   function sair(expirou) {
+    // avisa o servidor para apagar a sessão de 30 dias (se falhar, ela vence sozinha)
+    if (!expirou && S.token && !DEMO) api('sair', {}).catch(() => {});
+    if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
     S.token = null; S.user = null; S.carregado = false;
     try { localStorage.removeItem('bf_token'); } catch (e) { /* ignora */ }
     telaLogin(expirou ? 'Sua sessão expirou. Entre de novo.' : '');
