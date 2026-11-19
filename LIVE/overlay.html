@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Overlay da Live · Black Friday Vitalícia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<!--
+  OVERLAY DA LIVE 24H — fonte de navegador do OBS.
+  Parâmetros:
+    f=h          horizontal 1920x1080 (YouTube)      f=v  vertical 1080x1920 (Instagram/TikTok)
+    camada=fundo tela cheia, sem buraco (fica ATRÁS do vídeo: se o vídeo parar, ela aparece)
+    camada=frente moldura com o buraco transparente (fica NA FRENTE do vídeo) — padrão
+    c=youtube|instagram|tiktok  só para o painel saber qual OBS está ligado
+    demo=1       mostra um vídeo de exemplo no buraco (para conferir no navegador)
+  O buraco do vídeo:  horizontal x=40 y=118 1344x756  ·  vertical x=0 y=250 1080x608
+-->
+<style>
+:root{
+  --ouro:linear-gradient(100deg,#FFB23F 0%,#F9D36A 30%,#FFF0B0 48%,#E8B931 62%,#B9802C 100%);
+  --ouro2:#F9D36A; --ouro4:#C98A2E; --branco:#F4F5FF; --cinza:#9a9aa3; --linha:rgba(249,211,106,.28);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:transparent;overflow:hidden;font-family:Montserrat,system-ui,sans-serif;color:var(--branco)}
+body.previa{background:#2a2a2e}
+#tela{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden}
+#tela.h{width:1920px;height:1080px}
+#tela.v{width:1080px;height:1920px}
+.ouro-txt{background:var(--ouro);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* fundo preto com brilho dourado e as linhas curvas da ID; o buraco é recortado */
+#fundo{position:absolute;inset:0;background:
+  radial-gradient(45% 40% at 85% 12%,rgba(249,211,106,.10),transparent 70%),
+  radial-gradient(40% 35% at 8% 95%,rgba(255,178,63,.08),transparent 70%),#000}
+#fundo svg{position:absolute;inset:0;width:100%;height:100%}
+
+/* buraco do vídeo */
+#buraco{position:absolute;outline:3px solid transparent;border-radius:0}
+#buraco::before{content:"";position:absolute;inset:-4px;border-radius:6px;padding:3px;background:var(--ouro);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;z-index:3}
+#rotulo{position:absolute;left:18px;top:16px;z-index:4;display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.72);border:1px solid var(--linha);
+  padding:8px 16px;border-radius:999px;font-weight:800;font-size:18px;letter-spacing:.12em;text-transform:uppercase}
+#rotulo:empty{display:none}
+#recheio{position:absolute;inset:0;display:none;overflow:hidden;background:
+  radial-gradient(60% 70% at 30% 70%,rgba(249,211,106,.16),transparent 70%),linear-gradient(180deg,#0b0b0c,#000)}
+.cheio #recheio{display:block}
+#exemplo{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:
+  repeating-linear-gradient(45deg,#1b2430 0 40px,#18202b 40px 80px);color:#6c7b90;font-weight:800;font-size:40px;letter-spacing:.1em}
+.demo #exemplo{display:flex}
+.cheio #exemplo{display:none}
+
+/* topo */
+.vivo{display:inline-flex;align-items:center;gap:10px;font-weight:900;letter-spacing:.16em;text-transform:uppercase;
+  border:2px solid var(--ouro2);color:var(--ouro2);border-radius:999px;padding:6px 16px 6px 12px}
+.vivo i{width:12px;height:12px;border-radius:50%;background:#ff3b3b;box-shadow:0 0 12px #ff3b3b;animation:pisca 1.4s ease-in-out infinite}
+@keyframes pisca{50%{opacity:.25}}
+
+/* contagem */
+.cont-tit{font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--cinza)}
+.digitos{display:flex;gap:10px;align-items:flex-end}
+.dg{display:flex;flex-direction:column;align-items:center}
+.dg b{display:block;background:linear-gradient(180deg,#1d1d20,#0e0e10);border:1px solid var(--linha);border-radius:10px;font-weight:900;
+  font-variant-numeric:tabular-nums;text-align:center}
+.dg b span{background:var(--ouro);-webkit-background-clip:text;background-clip:text;color:transparent}
+.dg small{font-weight:700;letter-spacing:.18em;color:var(--cinza);text-transform:uppercase;margin-top:6px}
+.cont-fim{font-weight:900;text-transform:uppercase}
+
+/* cartões */
+.cartao{position:absolute;background:linear-gradient(180deg,rgba(22,22,25,.96),rgba(9,9,10,.96));border:1px solid var(--linha);border-radius:18px;overflow:hidden}
+.cartao::after{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--ouro)}
+.of-topo{font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ouro2)}
+.of-de{color:var(--cinza);text-decoration:line-through;font-weight:600}
+.of-parc{font-weight:900;line-height:1}
+.of-vista{font-weight:800}
+.of-rod{color:var(--branco);opacity:.85;font-weight:600}
+#qr{background:#fff;border-radius:14px;padding:12px;line-height:0}
+#qr svg{width:100%;height:100%;display:block}
+.qr-txt{font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.qr-curto{color:var(--ouro2);font-weight:700}
+
+/* palco: chamadas e treinamentos se revezando */
+#palco{position:absolute;overflow:hidden}
+.item{position:absolute;inset:0;display:flex;align-items:center;opacity:0;transform:translateY(24px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.8,.2,1)}
+.item.on{opacity:1;transform:none}
+.item.sai{opacity:0;transform:translateY(-24px)}
+.chamada{font-weight:900;line-height:1.12;text-wrap:balance}
+.chamada em{font-style:normal}
+.card-tag{display:inline-block;background:var(--ouro);color:#000;font-weight:900;letter-spacing:.14em;text-transform:uppercase;border-radius:6px;padding:4px 12px}
+.card-tit{font-weight:900;line-height:1.05}
+.card-itens{list-style:none;display:grid;gap:8px 28px}
+.card-itens li{position:relative;padding-left:26px;font-weight:600}
+.card-itens li::before{content:"";position:absolute;left:0;top:.45em;width:12px;height:12px;border-radius:3px;background:var(--ouro);transform:rotate(45deg)}
+.card-rod{color:var(--ouro2);font-weight:700;letter-spacing:.04em}
+
+/* faixa que corre */
+#faixa{position:absolute;left:0;right:0;background:var(--ouro);color:#000;overflow:hidden;display:flex;align-items:center}
+#faixa .trilho{display:flex;white-space:nowrap;will-change:transform;animation:corre linear infinite}
+#faixa .trilho span{font-weight:900;text-transform:uppercase;letter-spacing:.06em;padding:0 28px;display:inline-flex;align-items:center;gap:28px}
+#faixa .trilho span::after{content:"◆";font-size:.7em}
+@keyframes corre{to{transform:translateX(-50%)}}
+
+/* aviso (ex.: comente QUERO) */
+#aviso{position:absolute;display:none;align-items:center;justify-content:center;text-align:center;background:#000;border:2px solid var(--ouro2);
+  border-radius:16px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;box-shadow:0 0 40px rgba(249,211,106,.35);animation:pulsa 1.6s ease-in-out infinite}
+#aviso.on{display:flex}
+@keyframes pulsa{50%{box-shadow:0 0 10px rgba(249,211,106,.15)}}
+
+/* ============ HORIZONTAL 1920x1080 ============ */
+.h #buraco{left:40px;top:118px;width:1344px;height:756px}
+.h #topo{position:absolute;left:40px;right:40px;top:0;height:118px;display:flex;align-items:center;gap:26px}
+.h #topo .logo{height:58px}
+.h .vivo{font-size:18px}
+.h #contagem{margin-left:auto;display:flex;align-items:center;gap:18px}
+.h .cont-tit{font-size:15px;max-width:230px;text-align:right;line-height:1.3}
+.h .dg b{font-size:34px;min-width:62px;padding:6px 6px}
+.h .dg small{font-size:10px;margin-top:4px}
+.h .cont-fim{font-size:26px}
+.h #oferta{left:1414px;top:118px;width:466px;height:352px;padding:30px 30px 24px;display:flex;flex-direction:column;gap:10px}
+.h .of-topo{font-size:16px}
+.h .of-de{font-size:19px;margin-top:6px}
+.h .of-parc{font-size:50px;margin-top:4px;white-space:nowrap}
+.h .of-vista{font-size:28px}
+.h .of-rod{font-size:16px;margin-top:auto;line-height:1.35}
+.h #cqr{left:1414px;top:490px;width:466px;height:532px;padding:28px;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center}
+.h #qr{width:330px;height:330px}
+.h .qr-txt{font-size:22px;line-height:1.25}
+.h .qr-curto{font-size:18px}
+.h #palco{left:40px;top:894px;width:1344px;height:130px}
+.h .chamada{font-size:44px}
+.h .card{display:grid;grid-template-columns:470px 1fr;align-items:center;gap:30px;width:100%}
+.h .card-tag{font-size:14px}
+.h .card-tit{font-size:34px;margin-top:8px}
+.h .card-itens{grid-template-columns:1fr 1fr;font-size:21px}
+.h .card-rod{font-size:17px;margin-top:6px}
+.h #faixa{top:1036px;height:44px}
+.h #faixa .trilho span{font-size:20px}
+.h #aviso{left:200px;right:576px;top:770px;height:86px;font-size:34px;z-index:6}
+/* recheio horizontal (sem vídeo) */
+.h #recheio .socios{position:absolute;left:10px;bottom:0;height:720px}
+.h #recheio .r-dir{position:absolute;left:600px;right:50px;top:70px;bottom:60px;display:flex;flex-direction:column;justify-content:center;gap:26px}
+.h #recheio .r-logo{width:430px}
+.h #recheio .r-txt{font-size:48px;font-weight:900;line-height:1.12;min-height:3.4em;display:flex;align-items:center}
+.h #recheio .r-preco{font-size:36px;font-weight:800}
+.h #recheio .r-preco b{font-size:58px;font-weight:900}
+
+/* ============ VERTICAL 1080x1920 ============ */
+.v #buraco{left:0;top:250px;width:1080px;height:608px}
+.v #buraco::before{inset:-4px -10px}
+.v #topo{position:absolute;left:0;right:0;top:40px;height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
+.v #topo .logo{height:96px}
+.v .vivo{font-size:20px}
+.v #contagem{position:absolute;left:40px;right:40px;top:1300px;height:150px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.v .cont-tit{font-size:20px}
+.v .dg b{font-size:54px;min-width:110px;padding:8px 10px}
+.v .dg small{font-size:13px}
+.v .cont-fim{font-size:40px;text-align:center}
+.v #palco{left:50px;top:1470px;width:980px;height:310px}
+.v .chamada{font-size:54px;text-align:center;width:100%}
+.v .card{width:100%;display:flex;flex-direction:column;gap:12px}
+.v .card-tag{font-size:16px;align-self:flex-start}
+.v .card-tit{font-size:46px}
+.v .card-itens{grid-template-columns:1fr 1fr;font-size:24px}
+.v .card-rod{font-size:20px}
+.v #oferta{left:40px;top:1110px;width:1000px;height:170px;padding:26px 36px;display:grid;grid-template-columns:1fr auto;align-items:center;column-gap:24px}
+.v .of-topo{font-size:17px;grid-column:1/3}
+.v .of-de{display:none}
+.v .of-parc{font-size:76px}
+.v .of-vista{font-size:30px;text-align:right}
+.v .of-rod{display:none}
+.v #cqr{left:40px;top:880px;width:1000px;height:212px;padding:16px 28px;display:grid;grid-template-columns:1fr 180px;align-items:center;column-gap:24px}
+.v #qr{width:180px;height:180px;padding:8px;grid-row:1/3;grid-column:2}
+.v .qr-txt{font-size:52px;line-height:1;align-self:end}
+.v .qr-curto{align-self:start}
+.v .qr-curto{font-size:24px}
+.v #faixa{top:1810px;height:62px}
+.v #faixa .trilho span{font-size:26px}
+.v #aviso{left:60px;right:60px;top:740px;height:100px;font-size:38px;z-index:6}
+/* recheio vertical (sem vídeo) */
+.v #recheio .socios{position:absolute;right:-30px;bottom:0;height:590px}
+.v #recheio .r-dir{position:absolute;left:44px;width:560px;top:40px;bottom:40px;display:flex;flex-direction:column;justify-content:center;gap:20px}
+.v #recheio .r-logo{width:380px}
+.v #recheio .r-txt{font-size:38px;font-weight:900;line-height:1.12;min-height:4.5em;display:flex;align-items:center}
+.v #recheio .r-preco{font-size:28px;font-weight:800}
+.v #recheio .r-preco b{font-size:44px;font-weight:900}
+</style>
+</head>
+<body>
+<div id="tela">
+  <div id="fundo">
+    <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="lc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#bdbdbd" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+      <path d="M-40 760 C 120 640, 260 700, 330 860 S 420 1040, 520 1080" fill="none" stroke="url(#lc)" stroke-width="5" vector-effect="non-scaling-stroke"/>
+      <path d="M1040 120 C 900 60, 820 200, 860 330 S 980 520, 1060 470" fill="none" stroke="url(#lc)" stroke-width="5" vector-effect="non-scaling-stroke"/>
+    </svg>
+  </div>
+
+  <div id="buraco">
+    <div id="exemplo">VÍDEO DA AULA</div>
+    <div id="recheio">
+      <img class="socios" src="img/socios.png" alt="">
+      <div class="r-dir">
+        <img class="r-logo" src="img/logo-texto.png" alt="Black Friday Vitalícia">
+        <div class="r-txt" id="r-txt"></div>
+        <div class="r-preco" id="r-preco"></div>
+      </div>
+    </div>
+    <div id="rotulo"></div>
+  </div>
+
+  <div id="topo">
+    <img class="logo" src="img/logo-texto.png" alt="Black Friday Vitalícia">
+    <span class="vivo"><i></i>Ao vivo</span>
+    <div id="contagem" class="h-only"></div>
+  </div>
+
+  <div id="oferta" class="cartao">
+    <div class="of-topo" id="of-topo"></div>
+    <div class="of-de" id="of-de"></div>
+    <div class="of-parc ouro-txt" id="of-parc"></div>
+    <div class="of-vista" id="of-vista"></div>
+    <div class="of-rod" id="of-rod"></div>
+  </div>
+
+  <div id="cqr" class="cartao">
+    <div class="qr-txt" id="qr-txt"></div>
+    <div id="qr" aria-label="QR code da página de vendas"></div>
+    <div class="qr-curto" id="qr-curto"></div>
+  </div>
+
+  <div id="palco"></div>
+  <div id="faixa"><div class="trilho" id="trilho"></div></div>
+  <div id="aviso"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="config.js"></script>
+<script src="tela-padrao.js"></script>
+<script>
+(function () {
+  'use strict';
+  var Q = new URLSearchParams(location.search);
+  var F = Q.get('f') === 'v' ? 'v' : 'h';
+  var CAMADA = Q.get('camada') === 'fundo' ? 'fundo' : 'frente';
+  var CANAL = (Q.get('c') || (F === 'h' ? 'youtube' : 'vertical')).replace(/[^a-z0-9_-]/gi, '').slice(0, 20);
+  var DEMO = Q.get('demo') === '1';
+  var CFG = window.APP_CONFIG || {};
+  var BURACO = F === 'h' ? { x: 40, y: 118, w: 1344, h: 756, W: 1920, H: 1080 } : { x: 0, y: 250, w: 1080, h: 608, W: 1080, H: 1920 };
+  var CHAVE = 'live24h_tela';
+
+  var tela = document.getElementById('tela');
+  tela.className = F;
+  if (DEMO) tela.classList.add('demo');
+
+  // na vertical a contagem sai do topo e vai para baixo do vídeo
+  var cont = document.getElementById('contagem');
+  if (F === 'v') tela.appendChild(cont);
+
+  // escala para caber quando aberto fora do OBS (prévia)
+  function escala() {
+    var s = Math.min(innerWidth / BURACO.W, innerHeight / BURACO.H);
+    if (Math.abs(s - 1) < 0.01) { tela.style.transform = ''; document.body.classList.remove('previa'); return; }
+    document.body.classList.add('previa');
+    tela.style.transform = 'translate(' + ((innerWidth - BURACO.W * s) / 2) + 'px,' + ((innerHeight - BURACO.H * s) / 2) + 'px) scale(' + s + ')';
+  }
+  addEventListener('resize', escala); escala();
+
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------------------------------------------------------------- conteúdo
+  var T = null, assinatura = '';
+  function mesclar(base, novo) {
+    var o = JSON.parse(JSON.stringify(base));
+    if (!novo || typeof novo !== 'object') return o;
+    Object.keys(novo).forEach(function (k) {
+      if (novo[k] && typeof novo[k] === 'object' && !Array.isArray(novo[k]) && o[k] && typeof o[k] === 'object') o[k] = Object.assign({}, o[k], novo[k]);
+      else if (novo[k] !== undefined && novo[k] !== null) o[k] = novo[k];
+    });
+    return o;
+  }
+  function guardado() { try { return JSON.parse(localStorage.getItem(CHAVE) || 'null'); } catch (e) { return null; } }
+  function guardar(t) { try { localStorage.setItem(CHAVE, JSON.stringify(t)); } catch (e) { /* sem armazenamento */ } }
+
+  function aplicar(t) {
+    var nova = JSON.stringify(t);
+    if (nova === assinatura) return;
+    assinatura = nova; T = t;
+
+    var cheio = CAMADA === 'fundo' || t.modo === 'tela';
+    tela.classList.toggle('cheio', cheio);
+    // recorta o buraco no fundo só quando o vídeo aparece
+    var b = BURACO;
+    $('fundo').style.clipPath = cheio ? '' : "path(evenodd,'M0 0H" + b.W + 'V' + b.H + 'H0Z M' + b.x + ' ' + b.y + 'H' + (b.x + b.w) + 'V' + (b.y + b.h) + 'H' + b.x + "Z')";
+    $('rotulo').textContent = cheio ? '' : (t.rotuloVideo || '');
+
+    var o = t.oferta || {};
+    $('of-topo').textContent = o.topo || '';
+    $('of-de').textContent = o.de || '';
+    $('of-parc').textContent = o.parcela || '';
+    $('of-vista').textContent = o.vista || '';
+    $('of-rod').textContent = o.rodape || '';
+    $('r-preco').innerHTML = '<bclass="ouro-txt">' + esc(o.parcela || '') + '</b> ' + esc(o.vista || '');
+
+    var l = t.link || {};
+    $('qr-txt').innerHTML = F === 'v' ? '<span class="ouro-txt">' + esc(l.textoVertical || 'Link na bio') + '</span>' : esc(l.textoQR || '');
+    $('qr-curto').textContent = l.curto || '';
+    desenharQR(l.url || '');
+
+    var faixa = (t.faixa || []).filter(Boolean);
+    var trilho = $('trilho');
+    var bloco = faixa.map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('');
+    trilho.innerHTML = bloco + bloco;
+    requestAnimationFrame(function () { trilho.style.animationDuration = Math.max(20, trilho.scrollWidth / 2 / 90) + 's'; });
+
+    var av = t.aviso || {};
+    $('aviso').textContent = av.texto || '';
+    $('aviso').classList.toggle('on', !!(av.ativo && av.texto));
+
+    montarPalco();
+    tick();
+  }
+
+  function desenharQR(url) {
+    var alvo = $('qr');
+    if (!url || !window.qrcode) { alvo.style.visibility = 'hidden'; return; }
+    try {
+      var q = qrcode(0, 'M'); q.addData(url); q.make();
+      alvo.innerHTML = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+      alvo.style.visibility = '';
+    } catch (e) { alvo.style.visibility = 'hidden'; }
+  }
+
+  // ---------------------------------------------------------------- palco
+  var itens = [], idx = -1, timerPalco = null, chamadasR = [], idxR = -1;
+  function montarPalco() {
+    var ch = (T.chamadas || []).filter(function (c) { return c && c.ativo !== false && c.texto; });
+    var cd = (T.cards || []).filter(function (c) { return c && c.ativo !== false && c.titulo; });
+    chamadasR = ch.map(function (c) { return c.texto; });
+    itens = [];
+    var n = Math.max(ch.length, cd.length);
+    for (var i = 0; i < n; i++) {
+      if (ch[i]) itens.push({ tipo: 'ch', d: ch[i] });
+      if (cd[i]) itens.push({ tipo: 'cd', d: cd[i] });
+    }
+    $('palco').innerHTML = '';
+    idx = -1; idxR = -1;
+    clearInterval(timerPalco);
+    proximo();
+    var seg = Math.max(4, Number((T.tempos || {}).palco) || 9);
+    timerPalco = setInterval(proximo, seg * 1000);
+  }
+  function htmlItem(it) {
+    if (it.tipo === 'ch') return '<div class="chamada">' + destaque(it.d.texto) + '</div>';
+    var c = it.d;
+    var lista = (c.itens || []).filter(Boolean).slice(0, 4).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+    return '<div class="card"><div><span class="card-tag">' + esc(c.tag || '') + '</span><div class="card-tit">' + esc(c.titulo) + '</div>' +
+      (F === 'h' && c.rodape ? '<div class="card-rod">' + esc(c.rodape) + '</div>' : '') + '</div>' +
+      '<ul class="card-itens">' + lista + '</ul>' + (F === 'v' && c.rodape ? '<div class="card-rod">' + esc(c.rodape) + '</div>' : '') + '</div>';
+  }
+  // *palavra* fica dourada
+  function destaque(t) { return esc(t).replace(/\*([^*]+)\*/g, '<em class="ouro-txt">$1</em>'); }
+  function proximo() {
+    var palco = $('palco');
+    if (itens.length) {
+      idx = (idx + 1) % itens.length;
+      var velho = palco.querySelector('.item.on');
+      if (velho) { velho.classList.remove('on'); velho.classList.add('sai'); setTimeout(function () { velho.remove(); }, 800); }
+      var el = document.createElement('div');
+      el.className = 'item';
+      el.innerHTML = htmlItem(itens[idx]);
+      palco.appendChild(el);
+      requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('on'); }); });
+    }
+    if (chamadasR.length) {
+      idxR = (idxR + 1) % chamadasR.length;
+      $('r-txt').innerHTML = destaque(chamadasR[idxR]);
+    }
+  }
+
+  // ---------------------------------------------------------------- contagem
+  function tick() {
+    var c = (T && T.contagem) || {};
+    var el = $('contagem');
+    if (!c.ativo || !c.fim) { el.style.visibility = 'hidden'; return; }
+    el.style.visibility = '';
+    var fim = Date.parse(String(c.fim).length <= 16 ? c.fim + ':00-03:00' : c.fim + '-03:00');
+    var r = Math.floor((fim - Date.now()) / 1000);
+    if (isNaN(fim) || r <= 0) {
+      if (el.dataset.estado !== 'fim') { el.dataset.estado = 'fim'; el.innerHTML = '<div class="cont-fim ouro-txt">' + esc(c.aoAcabar || '') + '</div>'; }
+      return;
+    }
+    var p = [Math.floor(r / 86400), Math.floor(r % 86400 / 3600), Math.floor(r % 3600 / 60), r % 60];
+    if (el.dataset.estado !== 'conta' || el.dataset.tit !== c.titulo) {
+      el.dataset.estado = 'conta'; el.dataset.tit = c.titulo || '';
+      el.innerHTML = '<div class="cont-tit">' + esc(c.titulo || '') + '</div><div class="digitos">' +
+        ['dias', 'horas', 'min', 'seg'].map(function (u, i) { return '<div class="dg"><b><span id="dg' + i + '"></span></b><small>' + u + '</small></div>'; }).join('') + '</div>';
+    }
+    p.forEach(function (v, i) { var s = $('dg' + i); var t = (v < 10 ? '0' : '') + v; if (s.textContent !== t) s.textContent = t; });
+  }
+  setInterval(tick, 1000);
+
+  // ---------------------------------------------------------------- busca no painel
+  async function buscar() {
+    if (!CFG.API_URL) return;
+    try {
+      var u = CFG.API_URL + '?src=tela&f=' + F + '&camada=' + CAMADA + '&canal=' + encodeURIComponent(CANAL) + '&t=' + Date.now();
+      var r = await fetch(u, { redirect: 'follow', cache: 'no-store' });
+      var j = await r.json();
+      if (j && j.ok && j.tela) { var t = mesclar(window.TELA_PADRAO, j.tela); guardar(t); aplicar(t); }
+    } catch (e) { /* sem internet ou Apps Script fora: segue com o último conteúdo */ }
+  }
+
+  // prévia do painel: recebe o rascunho por postMessage e não busca nada
+  if (Q.get('previa') === '1') {
+    addEventListener('message', function (e) {
+      if (e.origin !== location.origin || !e.data || !e.data.tela) return;
+      aplicar(mesclar(window.TELA_PADRAO, e.data.tela));
+    });
+    aplicar(JSON.parse(JSON.stringify(window.TELA_PADRAO)));
+    return;
+  }
+
+  aplicar(mesclar(window.TELA_PADRAO, guardado()));
+  buscar();
+  setInterval(buscar, 60000);
+})();
+</script>
+</body>
+</html>
