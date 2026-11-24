@@ -275,7 +275,7 @@ footer .grito{font-weight:900;letter-spacing:.3em;text-transform:uppercase}
       </div>
       <div class="trilho" id="trilho"><div class="enche" id="enche"></div></div>
       <div class="mini-stats">
-        <div class="ms"><span>Ticket líquido</span><b id="stTicket">—</b></div>
+        <div class="ms"><span>Ticket médio</span><b id="stTicket">—</b></div>
         <div class="ms"><span>Vendas / hora</span><b id="stRitmo">—</b></div>
         <div class="ms"><span>Última venda</span><b id="stUltima">—</b></div>
         <div class="ms"><span>Hora de ouro</span><b id="stPico">—</b></div>
@@ -684,8 +684,10 @@ function desenhaGrafico() {
   for (var k = 0; k <= 5; k++) { var v = yMax * k / 5, yy = y(v); g2.beginPath(); g2.moveTo(padL, yy); g2.lineTo(W - padR, yy); g2.stroke(); g2.fillText(mil(Math.round(v / 1000) * 1000), padL - fs * .5, yy); }
   // eixo do tempo
   g2.textAlign = 'center'; g2.textBaseline = 'top';
-  var passo = [15, 30, 60, 120, 180, 360, 720, 1440].map(function (m) { return m * 60000; }).filter(function (p) { return (t1 - t0) / p <= 8; })[0] || 86400000;
-  for (var tt = Math.ceil(t0 / passo) * passo; tt < t1; tt += passo) g2.fillText(hhmm(new Date(tt)), x(tt), H - padB + fs * .6);
+  var passo = [15, 30, 60, 120, 180, 360, 720, 1440, 2880, 4320, 10080].map(function (m) { return m * 60000; }).filter(function (p) { return (t1 - t0) / p <= 8; })[0] || 86400000;
+  var rotT = function (d) { return passo >= 86400000 ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' }) : hhmm(d); };
+  var off = passo >= 86400000 ? 3 * 3600000 : 0;   // dias: marca à meia-noite de Brasília
+  for (var tt = Math.ceil((t0 - off) / passo) * passo + off; tt < t1; tt += passo) g2.fillText(rotT(new Date(tt)), x(tt), H - padB + fs * .6);
   // metas
   metas.forEach(function (m) {
     var yy = y(m.valor), ok = total >= m.valor;
