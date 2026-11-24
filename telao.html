@@ -71,6 +71,9 @@ main{display:grid;grid-template-columns:1.08fr 1fr;grid-template-rows:1fr 1fr;ga
 #placar{display:flex;flex-direction:column;justify-content:center;gap:calc(var(--u)*1.2)}
 .linha-placar{display:flex;align-items:flex-end;gap:calc(var(--u)*2.4)}
 .ao-lado{flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(var(--u)*.2)}
+.info-liq{font-size:calc(var(--u)*1.05);font-weight:600;color:var(--cinza);letter-spacing:.02em}
+.info-liq b{color:var(--branco);font-weight:800}
+.info-liq i{font-style:normal;color:var(--cinza2)}
 .rot-linha{display:flex;align-items:center;gap:calc(var(--u)*1.2)}
 .rot-linha .var{margin:0;font-size:calc(var(--u)*1.05);padding:.25em .8em}
 .bloco-num{display:flex;flex-direction:column;gap:calc(var(--u)*.6)}
@@ -251,14 +254,15 @@ footer .grito{font-weight:900;letter-spacing:.3em;text-transform:uppercase}
         </div>
       </div>
       <div class="bloco-num">
-        <div class="rot-linha"><div class="rot">Líquido na <span class="ouro-txt">Hotmart</span></div><div class="var" id="varHora">▲ 0 na última hora</div></div>
+        <div class="rot-linha"><div class="rot" id="rotValor">Faturamento <span class="ouro-txt">da Black</span></div><div class="var" id="varHora">▲ 0 na última hora</div></div>
         <div class="flap" id="flapLiquido"></div>
+        <div class="info-liq" id="infoLiq"></div>
       </div>
     </section>
 
     <section class="painel" id="grafico">
       <div class="graf-topo">
-        <div class="rot">BFV26 · <span class="ouro-txt">líquido acumulado</span></div>
+        <div class="rot">BFV26 · <span class="ouro-txt" id="rotGraf">faturamento acumulado</span></div>
         <div class="cotacao" id="cotacao">R$ 0 <small class="neutro">—</small></div>
       </div>
       <canvas id="cv"></canvas>
@@ -331,7 +335,9 @@ var METAS_PADRAO = [
   { valor: 500000, nome: 'Meta top', premio: 'R$ 800 de vale iFood' }
 ];
 var OFERTAS = { padrao: 'Cheia · 2.897', mdl_ilu_gfl: 'Clientes · 1.997', bf25: 'Upgrade · 997' };
-var LIQ_PADRAO = 2897 * 0.901 - 1;
+var TICKET_PADRAO = 2897;
+var BASE = 'faturamento';   // vem do sistema: faturamento (igual ao dash) ou liquido
+function val(v) { return BASE === 'liquido' ? Number(v.l || 0) : Number(v.f != null ? v.f : v.l || 0); }
 
 function guarda(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 var $ = function (id) { return document.getElementById(id); };
@@ -395,8 +401,8 @@ function gira(c, atraso) {
     }, d * 2 + 5);
   }, atraso || 0);
 }
-var flapV = new Flap($('flapVendas'), '###', 7.2, true);
-var flapL = new Flap($('flapLiquido'), '$###.###', 6.1, false);
+var flapV = new Flap($('flapVendas'), '###', 6.7, true);
+var flapL = new Flap($('flapLiquido'), '$###.###', 5.6, false);
 
 /* ---------------- som (Web Audio, sem arquivos) ---------------- */
 var ctx = null, somLigado = guarda('telao_som') === '1';
@@ -481,6 +487,7 @@ var assinatura = function (v) { return v.t + '|' + v.n + '|' + v.l; };
 function aplica(dados) {
   var vendas = (dados.vendas || []).slice().sort(function (a, b) { return String(a.t).localeCompare(String(b.t)); });
   var metas = (dados.metas && dados.metas.length) ? dados.metas : METAS_PADRAO;
+  if (dados.base) BASE = dados.base;
   var novas = vendas.filter(function (v) { return !vistas[assinatura(v)]; });
   vendas.forEach(function (v) { vistas[assinatura(v)] = 1; });
   var totalAntes = soma(estado.vendas);
@@ -504,7 +511,8 @@ function aplica(dados) {
     proximo();
   }
 }
-function soma(vs) { return vs.reduce(function (s, v) { return s + Number(v.l || 0); }, 0); }
+function soma(vs) { return vs.reduce(function (s, v) { return s + val(v); }, 0); }
+function somaLiq(vs) { return vs.reduce(function (s, v) { return s + Number(v.l || 0); }, 0); }
 
 /* ---------------- celebrações ---------------- */
 function proximo() {
@@ -522,7 +530,7 @@ function proximo() {
     var v = it.v;
     $('vTitulo').textContent = 'VENDIDO!';
     $('vQuem').innerHTML = esc(v.n) + (v.uf ? ' <i>· ' + esc(v.uf) + '</i>' : '') + ' <i>· ' + esc((OFERTAS[v.o] || 'Combo Vitalício').split(' · ')[0]) + '</i>';
-    $('vValor').textContent = '+' + brl(v.l);
+    $('vValor').textContent = '+' + brl(val(v));
     $('vPor').textContent = v.a ? 'Fechada por ' + v.a : (v.c && v.c !== 'Direto' ? 'Veio pelo ' + v.c : 'Direto na página');
   }
   el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
@@ -549,6 +557,10 @@ function desenhaTudo(novasAss) {
   flapV.set(String(n));
   var t = String(Math.round(total)).padStart(6, ' ');
   flapL.set(t.length > 6 ? '999999' : t);
+  var liqTot = somaLiq(vs);
+  $('rotValor').innerHTML = BASE === 'liquido' ? 'Líquido na <span class="ouro-txt">Hotmart</span>' : 'Faturamento <span class="ouro-txt">da Black</span>';
+  $('rotGraf').textContent = BASE === 'liquido' ? 'líquido acumulado' : 'faturamento acumulado';
+  $('infoLiq').innerHTML = BASE === 'liquido' ? '' : (n ? 'Líquido na Hotmart <b>' + brl(liqTot) + '</b> <i>·</i> taxas <b>' + brl(Math.max(0, total - liqTot)) + '</b>' : '');
 
   // última hora
   var umaH = vs.filter(function (v) { return agora - data(v.t).getTime() < 3600000; });
@@ -575,7 +587,7 @@ function desenhaTudo(novasAss) {
   metas.forEach(function (m, i) { var ok = total >= m.valor; marcos[i].classList.toggle('ok', ok); if (!ok && proxIdx < 0) proxIdx = i; });
   marcos.forEach(function (mk, i) { mk.classList.toggle('prox', i === proxIdx); });
   $('enche').style.width = (posMeta(total, metas) * 100) + '%';
-  var ticket = n ? total / n : LIQ_PADRAO;
+  var ticket = n ? total / n : TICKET_PADRAO;
   if (proxIdx >= 0) {
     var m = metas[proxIdx], falta = m.valor - total, nv = Math.ceil(falta / ticket);
     $('falta').innerHTML = 'Faltam <em class="ouro-txt">' + brl(falta) + '</em> para a <em class="ouro-txt">' + esc(m.nome.toLowerCase()) + '</em>' +
@@ -601,12 +613,12 @@ function desenhaTudo(novasAss) {
     ul.innerHTML = vs.slice(-7).reverse().map(function (v) {
       return '<li class="' + (novasSet[assinatura(v)] && !estado.primeira ? 'novo' : '') + '"><span class="h">' + hhmm(data(v.t)) + '</span>' +
         '<span class="q">▲ ' + esc(v.n) + (v.uf ? ' <i>' + esc(v.uf) + '</i>' : '') + ' <i>· ' + esc(v.a || v.c || '') + '</i></span>' +
-        '<span class="v">+' + brl(v.l) + '</span></li>';
+        '<span class="v">+' + brl(val(v)) + '</span></li>';
     }).join('');
   }
 
   // ranking da mesa (atendentes)
-  var porA = {}; vs.forEach(function (v) { var k = v.a || 'Direto / site'; porA[k] = porA[k] || { n: 0, l: 0 }; porA[k].n++; porA[k].l += v.l; });
+  var porA = {}; vs.forEach(function (v) { var k = v.a || 'Direto / site'; porA[k] = porA[k] || { n: 0, l: 0 }; porA[k].n++; porA[k].l += val(v); });
   var rk = Object.keys(porA).map(function (k) { return { k: k, n: porA[k].n, l: porA[k].l }; }).sort(function (a, b) { return b.n - a.n || b.l - a.l; }).slice(0, 5);
   var maxN = rk.length ? rk[0].n : 1;
   $('rank').innerHTML = rk.length ? rk.map(function (r, i) {
@@ -640,7 +652,7 @@ function desenhaFita(total) {
   var itens = [];
   itens.push('<span><b class="ouro">BFV26</b> ' + brl(total) + ' <b class="sobe">▲ ' + vs.length + ' vendas</b></span>');
   vs.slice(-14).reverse().forEach(function (v) {
-    itens.push('<span><b>' + esc(v.n) + '</b>' + (v.uf ? '<span class="cin" style="padding:0 0 0 .4em">' + esc(v.uf) + '</span>' : '') + ' <b class="sobe">▲ +' + brl(v.l) + '</b> <span class="cin" style="padding:0">' + esc(v.a ? 'via ' + v.a : v.c) + ' · ' + hhmm(data(v.t)) + '</span></span>');
+    itens.push('<span><b>' + esc(v.n) + '</b>' + (v.uf ? '<span class="cin" style="padding:0 0 0 .4em">' + esc(v.uf) + '</span>' : '') + ' <b class="sobe">▲ +' + brl(val(v)) + '</b> <span class="cin" style="padding:0">' + esc(v.a ? 'via ' + v.a : v.c) + ' · ' + hhmm(data(v.t)) + '</span></span>');
   });
   metas.forEach(function (m) { itens.push('<span><b class="ouro">' + esc(m.nome.toUpperCase()) + '</b> ' + mil(m.valor) + ' → ' + esc(m.premio) + (total >= m.valor ? ' <b class="sobe">✓ BATIDA</b>' : ' <span class="cin" style="padding:0">faltam ' + brl(m.valor - total) + '</span>') + '</span>'); });
   itens.push('<span><b class="ouro">OUVI VALE IFOOD RECHEADO????</b></span>');
@@ -689,7 +701,7 @@ function desenhaGrafico() {
   Object.keys(vol).forEach(function (b) { var h = vol[b] / vmax * volH; g2.fillStyle = 'rgba(43,214,123,.35)'; g2.fillRect(x(b * bucket) + 1, base - h, bw, h); });
   // linha em degraus
   var pts = [[x(t0), y(0)]], acc = 0;
-  vs.forEach(function (v) { var xx = x(data(v.t).getTime()); pts.push([xx, y(acc)]); acc += v.l; pts.push([xx, y(acc)]); });
+  vs.forEach(function (v) { var xx = x(data(v.t).getTime()); pts.push([xx, y(acc)]); acc += val(v); pts.push([xx, y(acc)]); });
   pts.push([x(agora), y(acc)]);
   var grad = g2.createLinearGradient(0, padT, 0, base);
   grad.addColorStop(0, 'rgba(249,211,106,.38)'); grad.addColorStop(1, 'rgba(249,211,106,0)');
@@ -752,7 +764,7 @@ function vendaDemo(ms) {
   var p2 = function (n) { return String(n).padStart(2, '0'); };
   return { t: sp.getFullYear() + '-' + p2(sp.getMonth() + 1) + '-' + p2(sp.getDate()) + 'T' + p2(sp.getHours()) + ':' + p2(sp.getMinutes()) + ':' + p2(sp.getSeconds()),
     n: NOMES[Math.floor(Math.random() * NOMES.length)], uf: UFS[Math.floor(Math.random() * UFS.length)], o: o,
-    l: Math.round((preco * 0.901 - 1) * 100) / 100, a: a, c: o === 'padrao' ? CANAIS[Math.floor(Math.random() * CANAIS.length)] : 'Clientes' };
+    f: o === 'padrao' && Math.random() < .7 ? 3036.99 : preco, l: Math.round((preco * 0.951) * 100) / 100, a: a, c: o === 'padrao' ? CANAIS[Math.floor(Math.random() * CANAIS.length)] : 'Clientes' };
 }
 function iniciaDemo() {
   $('demoTag').hidden = false; $('atalhos').textContent = 'F = tela cheia · S = som · V = simular venda · M = simular meta';
