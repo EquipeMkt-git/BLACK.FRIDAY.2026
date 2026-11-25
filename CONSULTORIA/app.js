@@ -162,12 +162,13 @@
     const d = S.dados; if (!d) return;
     const admin = d.user.perfil === 'admin';
     const scroll = window.scrollY;
-    const abas = admin ? [['inicio', 'Ranking'], ['vendas', 'Vendas'], ['semdono', 'Sem consultor'], ['pessoas', 'Pessoas']] : [];
+    const abas = admin ? [['inicio', 'Ranking'], ['funil', 'Funil por link'], ['vendas', 'Vendas'], ['semdono', 'Sem consultor'], ['pessoas', 'Pessoas']] : [];
     if (d.user.codigo && admin) abas.splice(1, 0, ['meu', 'Meus links']);
     const semDono = admin ? (d.vendas || []).filter(function (v) { return v.ativa && !v.codigo && v.da_pagina; }).length : 0;
 
     let corpo = '';
     if (!admin || S.aba === 'meu') corpo = telaPessoa(d);
+    else if (S.aba === 'funil') corpo = telaFunil(d);
     else if (S.aba === 'vendas') corpo = telaVendas(d);
     else if (S.aba === 'semdono') corpo = telaSemDono(d);
     else if (S.aba === 'pessoas') corpo = telaPessoas(d);
@@ -301,6 +302,58 @@
         '<div class="stat"><span>Atribuídas à mão</span><b class="num">' + manuais + '</b></div>' +
         '<div class="stat"><span>Da página sem código</span><b class="num">' + semDono.length + '</b></div>' +
       '</div></section>' + blocoRanking(d);
+  }
+
+  // ---------------------------------------------------------------- funil por link (admin)
+  const pct = function (a, b) { return b ? (Math.round(a / b * 1000) / 10).toLocaleString('pt-BR') + '%' : '—'; };
+  const nfmt = function (n) { return (Number(n) || 0).toLocaleString('pt-BR'); };
+
+  function telaFunil(d) {
+    if (d.funil_erro) return '<section class="card"><h2>Funil por link</h2><div class="aviso">Não deu para ler os acessos agora: ' + esc(d.funil_erro) + '</div></section>';
+    const f = d.funil || { linhas: [] };
+    const ls = f.linhas.slice();
+    const chave = S.ordemFunil || 'acessos';
+    ls.sort(function (a, b) { return (a.sem_codigo ? 1 : 0) - (b.sem_codigo ? 1 : 0) || (Number(b[chave]) || 0) - (Number(a[chave]) || 0) || b.vendas - a.vendas || a.nome.localeCompare(b.nome); });
+    const pessoas = ls.filter(function (l) { return !l.sem_codigo; });
+    const soma = function (k) { return pessoas.reduce(function (s, l) { return s + (Number(l[k]) || 0); }, 0); };
+    const T = { acessos: soma('acessos'), visitantes: soma('visitantes'), iniciaram: soma('iniciaram'), vendas: soma('vendas'), clicaram_sem_comprar: soma('clicaram_sem_comprar'), pararam_pagamento: soma('pararam_pagamento') };
+
+    const hotTxt = function (h) {
+      const p = [];
+      if (h.aguardando) p.push(h.aguardando + ' Pix/boleto sem pagar');
+      if (h.recusado) p.push(h.recusado + ' recusado' + (h.recusado > 1 ? 's' : ''));
+      if (h.expirou) p.push(h.expirou + ' expirou');
+      if (h.abandonou) p.push(h.abandonou + ' abandonou carrinho');
+      return p.join(' · ');
+    };
+    const th = function (k, t, n) { return '<th class="' + (n ? 'n ' : '') + 'ord" data-ordem-funil="' + k + '" aria-sort="' + (chave === k ? 'descending' : 'none') + '">' + t + (chave === k ? ' ↓' : '') + '</th>'; };
+    const linha = function (l) {
+      const h = hotTxt(l.hotmart || {});
+      return '<tr' + (l.sem_codigo ? ' class="muted"' : '') + '><td>' + esc(l.nome) + '<span class="sub">' + (l.sem_codigo ? 'quem abriu a página sem link de ninguém' : '<code>' + esc(l.codigo) + '</code>' + (l.ultimo ? ' · último acesso ' + dataBR(l.ultimo) : '')) + '</span></td>' +
+        '<td class="n num">' + nfmt(l.acessos) + '<span class="sub">' + nfmt(l.visitantes) + ' pessoa' + (l.visitantes === 1 ? '' : 's') + '</span></td>' +
+        '<td class="n num">' + nfmt(l.iniciaram) + '<span class="sub">' + pct(l.iniciaram, l.visitantes) + ' de quem abriu</span></td>' +
+        '<td class="n num"><b>' + nfmt(l.vendas) + '</b><span class="sub">' + brl(l.faturamento) + '</span></td>' +
+        '<td class="n num">' + nfmt(l.clicaram_sem_comprar) + '<span class="sub">' + pct(l.clicaram_sem_comprar, l.iniciaram) + ' de quem clicou</span></td>' +
+        '<td class="n num">' + nfmt(l.pararam_pagamento) + (h ? '<span class="sub quebra">' + esc(h) + '</span>' : '') + '</td>' +
+        '<td class="n num">' + (l.conversao === null || l.conversao === undefined ? '—' : String(l.conversao).replace('.', ',') + '%') + '</td></tr>';
+    };
+
+    return '<section class="card heroi"><div class="ola">Funil dos links da consultoria</div>' +
+      '<div class="pos txt-ouro num">' + nfmt(T.acessos) + ' <small>acessos</small></div>' +
+      '<div class="frase">' + nfmt(T.visitantes) + ' pessoas abriram a página por um link · ' + nfmt(T.iniciaram) + ' clicaram em comprar · ' + nfmt(T.vendas) + ' compraram</div>' +
+      '<div class="stats quatro">' +
+        '<div class="stat"><span>Iniciaram a compra</span><b class="num">' + nfmt(T.iniciaram) + '</b><span class="num">' + pct(T.iniciaram, T.visitantes) + ' de quem abriu</span></div>' +
+        '<div class="stat"><span>Compraram</span><b class="num">' + nfmt(T.vendas) + '</b><span class="num">' + pct(T.vendas, T.visitantes) + ' de quem abriu</span></div>' +
+        '<div class="stat"><span>Clicaram e não compraram</span><b class="num">' + nfmt(T.clicaram_sem_comprar) + '</b><span class="num">' + pct(T.clicaram_sem_comprar, T.iniciaram) + ' de quem clicou</span></div>' +
+        '<div class="stat"><span>Pararam no pagamento</span><b class="num">' + nfmt(T.pararam_pagamento) + '</b><span>Pix/boleto, recusado, carrinho</span></div>' +
+      '</div></section>' +
+      '<section class="card"><h2>Por link <small>' + (f.desde ? 'acessos contados desde ' + dataBR(f.desde) : 'os acessos começam a contar quando o trecho novo entrar na página') + '</small></h2>' +
+      '<div class="tabela-wrap"><table class="funil"><thead><tr><th>Link</th>' + th('acessos', 'Acessos', 1) + th('iniciaram', 'Iniciaram compra', 1) + th('vendas', 'Vendas', 1) +
+        th('clicaram_sem_comprar', 'Clicaram e não compraram', 1) + th('pararam_pagamento', 'Pararam no pagamento', 1) + th('conversao', 'Conversão', 1) + '</tr></thead><tbody>' +
+        ls.map(linha).join('') + '</tbody></table></div>' +
+      '<p class="mini" style="margin-top:12px"><b>Acessos</b>: aberturas da página com o código da pessoa (inclui quem voltou depois, até 30 dias). <b>Iniciaram compra</b>: pessoas que clicaram num botão da Hotmart. ' +
+        '<b>Clicaram e não compraram</b>: iniciaram menos vendas. <b>Pararam no pagamento</b>: geraram Pix/boleto e não pagaram, tiveram o cartão recusado, deixaram vencer ou abandonaram o carrinho na Hotmart, e não compraram depois. ' +
+        'Venda pelo link de checkout direto conta em Vendas, mas não passa pela página, então não soma acesso. <b>Conversão</b>: vendas ÷ pessoas que abriram.</p></section>';
   }
 
   function linhaVenda(v, comAcao) {
@@ -442,6 +495,7 @@
   function ligar() {
     app.querySelectorAll('[data-sair]').forEach(function (b) { b.addEventListener('click', function () { sair(false); }); });
     app.querySelectorAll('[data-aba]').forEach(function (b) { b.addEventListener('click', function () { S.aba = b.getAttribute('data-aba'); S.busca = ''; render(); window.scrollTo(0, 0); }); });
+    app.querySelectorAll('[data-ordem-funil]').forEach(function (b) { b.addEventListener('click', function () { S.ordemFunil = b.getAttribute('data-ordem-funil'); render(true); }); });
     app.querySelectorAll('[data-ordem]').forEach(function (b) { b.addEventListener('click', function () { S.ordem = b.getAttribute('data-ordem'); render(true); }); });
     app.querySelectorAll('[data-copiar]').forEach(function (b) { b.addEventListener('click', function () { copiar(b.getAttribute('data-copiar')); }); });
     app.querySelectorAll('[data-atribuir]').forEach(function (b) { b.addEventListener('click', function () { folhaAtribuir(b.getAttribute('data-atribuir')); }); });

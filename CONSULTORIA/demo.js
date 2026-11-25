@@ -36,7 +36,7 @@
     return {
       pagina: 'https://cont.4blue.com.br/pagina-de-vendas-black-friday-consultoria/?utm_source=consultoria&utm_content=' + c,
       checkout: 'https://pay.hotmart.com/H108268133T?off=dxsbms9m&checkoutMode=10&split=1&hideBillet=1&sck=' + sck,
-      desconto_1997: 'https://pay.hotmart.com/H108268133T?off=x19adxre&checkoutMode=10&split=12&hideBillet=1&sck=' + sck,
+      desconto_1997: 'https://pay.hotmart.com/H108268133T?off=x19adxre&checkoutMode=10&split=1&hideBillet=1&sck=' + sck,
       desconto_997: 'https://pay.hotmart.com/S108418550F?off=ekz44qe5&checkoutMode=10&split=12&hideBillet=1&sck=' + sck
     };
   }
@@ -85,6 +85,25 @@
     if (u.perfil === 'admin') {
       out.vendas = vs.slice().reverse();
       out.pessoas = pessoas.map(function (p) { return Object.assign({}, p, p.codigo ? { links: links(p.codigo) } : {}); });
+      // funil por link (fictício)
+      const linhas = pessoas.filter(function (p) { return p.codigo && p.ativo === 'SIM'; }).map(function (p) { return { codigo: p.codigo, nome: p.nome }; });
+      linhas.push({ codigo: '', nome: 'Página sem código', sem_codigo: true });
+      out.funil = {
+        desde: '2026-11-24T17:10:00',
+        linhas: linhas.map(function (l, i) {
+          const vs = vs2(l);
+          const vis = [64, 41, 37, 22, 18, 9, 4, 0, 30][i] || 0;
+          const ini = Math.max(vs.length, Math.round(vis * [0.31, 0.28, 0.35, 0.4, 0.22, 0.33, 0.5, 0, 0.2][i]));
+          const h = { aguardando: i % 3 === 0 ? 2 : i % 2, recusado: i < 3 ? 1 : 0, expirou: i === 1 ? 1 : 0, abandonou: 0 };
+          return {
+            codigo: l.codigo, nome: l.nome, sem_codigo: !!l.sem_codigo, acessos: Math.round(vis * 1.6), visitantes: vis, chegadas: vis,
+            cliques: ini + 2, iniciaram: ini, vendas: vs.length, faturamento: vs.reduce(function (s, v) { return s + v.valor; }, 0),
+            clicaram_sem_comprar: Math.max(0, ini - vs.length), pararam_pagamento: vis ? h.aguardando + h.recusado + h.expirou : 0, hotmart: vis ? h : {},
+            conversao: vis ? Math.round(vs.length / vis * 1000) / 10 : null, ultimo: vis ? '2026-11-24T18:' + String(10 + i * 4) + ':00' : ''
+          };
+        })
+      };
+      function vs2(l) { return vs.filter(function (v) { return v.ativa && (l.sem_codigo ? (!v.codigo && v.da_pagina) : v.codigo === l.codigo); }); }
     }
     return out;
   }
