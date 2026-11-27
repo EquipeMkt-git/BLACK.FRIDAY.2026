@@ -68,12 +68,20 @@ main{display:grid;grid-template-columns:1.08fr 1fr;grid-template-rows:1fr 1fr;ga
 .rot .ouro-txt{letter-spacing:.28em}
 
 /* placar */
-#placar{display:flex;flex-direction:column;justify-content:center;gap:calc(var(--u)*1.2)}
+#placar{display:flex;flex-direction:column;justify-content:center;gap:calc(var(--u)*1.05)}
 .linha-placar{display:flex;align-items:flex-end;gap:calc(var(--u)*2.4)}
 .ao-lado{flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(var(--u)*.2)}
-.info-liq{font-size:calc(var(--u)*1.05);font-weight:600;color:var(--cinza);letter-spacing:.02em}
+.info-liq{font-size:calc(var(--u)*1.05);font-weight:600;color:var(--cinza);letter-spacing:.02em;white-space:nowrap}
+.info-liq:empty{display:none}
 .info-liq b{color:var(--branco);font-weight:800}
 .info-liq i{font-style:normal;color:var(--cinza2)}
+.linha-fat{display:flex;align-items:stretch;gap:calc(var(--u)*1.3)}
+.fat-esq{display:flex;flex-direction:column;justify-content:center;gap:calc(var(--u)*.55);flex-shrink:0}
+.kpis-inv{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:calc(var(--u)*.42)}
+.kpi-dupla{display:grid;grid-template-columns:1fr 1fr;gap:calc(var(--u)*.45);flex:1}
+.kpi-box{flex:1;border:1px solid var(--linha);border-radius:calc(var(--u)*.6);padding:calc(var(--u)*.34) calc(var(--u)*.55);background:rgba(0,0,0,.35);display:flex;flex-direction:column;justify-content:center;min-width:0}
+.kpi-box span{display:block;font-size:calc(var(--u)*.62);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--cinza);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi-box b{display:block;font-size:calc(var(--u)*1.38);font-weight:900;margin-top:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rot-linha{display:flex;align-items:center;gap:calc(var(--u)*1.2)}
 .rot-linha .var{margin:0;font-size:calc(var(--u)*1.05);padding:.25em .8em}
 .bloco-num{display:flex;flex-direction:column;gap:calc(var(--u)*.6)}
@@ -203,6 +211,7 @@ footer .grito{font-weight:900;letter-spacing:.3em;text-transform:uppercase}
   header{grid-template-columns:1fr auto}
   .titulo{display:none}
   main{grid-template-columns:1fr;grid-template-rows:none}
+  .linha-placar,.linha-fat{flex-direction:column;align-items:stretch}
   #grafico{height:60vw}
   #mesa{grid-template-columns:1fr}
   .mini-stats{grid-template-columns:repeat(2,1fr)}
@@ -255,8 +264,28 @@ footer .grito{font-weight:900;letter-spacing:.3em;text-transform:uppercase}
       </div>
       <div class="bloco-num">
         <div class="rot-linha"><div class="rot" id="rotValor">Faturamento <span class="ouro-txt">da Black</span></div><div class="var" id="varHora">▲ 0 na última hora</div></div>
-        <div class="flap" id="flapLiquido"></div>
-        <div class="info-liq" id="infoLiq"></div>
+        <div class="linha-fat">
+          <div class="fat-esq">
+            <div class="flap" id="flapLiquido"></div>
+            <div class="info-liq" id="infoLiq"></div>
+          </div>
+          <div class="kpis-inv" id="kpisInv">
+            <div class="kpi-box" id="kpiInvCard">
+              <span>Investimento total</span>
+              <b id="stInvestimento">—</b>
+            </div>
+            <div class="kpi-dupla">
+              <div class="kpi-box">
+                <span>ROAS bruto</span>
+                <b class="ouro-txt" id="stRoas">—</b>
+              </div>
+              <div class="kpi-box">
+                <span>Investibilidade</span>
+                <b id="stInvestibilidade">—</b>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -346,6 +375,7 @@ var hashK = (location.hash.match(/k=([^&]+)/) || [])[1];
 if (hashK) { guarda('telao_k', decodeURIComponent(hashK)); history.replaceState(null, '', location.pathname + location.search); }
 var CHAVE = guarda('telao_k') || '';
 var DEMO = qs.has('demo') || !API_URL;
+var INV_QS = Number(String(qs.get('inv') || '').replace(/\./g, '').replace(',', '.')) || 0;
 
 var brl = function (n, dec) { return 'R$ ' + Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: dec ? 2 : 0, maximumFractionDigits: dec ? 2 : 0 }); };
 var mil = function (n) { return n >= 1000 ? (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + 'K' : String(n); };
@@ -477,7 +507,7 @@ function quadro() {
 }
 
 /* ---------------- estado ---------------- */
-var estado = { vendas: [], metas: METAS_PADRAO, reembolsos: 0, ok: false, primeira: true, ultimaOk: 0 };
+var estado = { vendas: [], metas: METAS_PADRAO, reembolsos: 0, investimento: INV_QS, invDetalhe: null, ok: false, primeira: true, ultimaOk: 0 };
 var vistas = {};   // assinatura de cada venda já mostrada
 var fila = [], mostrando = false;
 var metasVistas = {};
@@ -488,6 +518,10 @@ function aplica(dados) {
   var vendas = (dados.vendas || []).slice().sort(function (a, b) { return String(a.t).localeCompare(String(b.t)); });
   var metas = (dados.metas && dados.metas.length) ? dados.metas : METAS_PADRAO;
   if (dados.base) BASE = dados.base;
+  if (dados.investimento != null && !isNaN(Number(dados.investimento)) && (Number(dados.investimento) > 0 || !INV_QS)) {
+    estado.investimento = Number(dados.investimento);
+  }
+  if (dados.investimento_detalhe) estado.invDetalhe = dados.investimento_detalhe;
   var novas = vendas.filter(function (v) { return !vistas[assinatura(v)]; });
   vendas.forEach(function (v) { vistas[assinatura(v)] = 1; });
   var totalAntes = soma(estado.vendas);
@@ -512,6 +546,7 @@ function aplica(dados) {
   }
 }
 function soma(vs) { return vs.reduce(function (s, v) { return s + val(v); }, 0); }
+function somaFat(vs) { return vs.reduce(function (s, v) { return s + Number(v.f != null ? v.f : v.l || 0); }, 0); }
 function somaLiq(vs) { return vs.reduce(function (s, v) { return s + Number(v.l || 0); }, 0); }
 
 /* ---------------- celebrações ---------------- */
@@ -561,6 +596,21 @@ function desenhaTudo(novasAss) {
   $('rotValor').innerHTML = BASE === 'liquido' ? 'Líquido na <span class="ouro-txt">Hotmart</span>' : 'Faturamento <span class="ouro-txt">da Black</span>';
   $('rotGraf').textContent = BASE === 'liquido' ? 'líquido acumulado' : 'faturamento acumulado';
   $('infoLiq').innerHTML = BASE === 'liquido' ? '' : (n ? 'Líquido na Hotmart <b>' + brl(liqTot) + '</b> <i>·</i> taxas <b>' + brl(Math.max(0, total - liqTot)) + '</b>' : '');
+
+  // investimento total, ROAS bruto e investibilidade
+  var fatBruto = somaFat(vs), inv = Number(estado.investimento || 0);
+  $('stInvestimento').textContent = inv > 0 ? brl(inv, true) : '—';
+  $('stRoas').textContent = (inv > 0 && fatBruto > 0) ? (fatBruto / inv).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'x' : '—';
+  $('stInvestibilidade').textContent = (inv > 0 && fatBruto > 0) ? (inv / fatBruto * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '—';
+  if (estado.invDetalhe) {
+    var det = estado.invDetalhe;
+    if (det.erro) $('kpiInvCard').title = 'Planilha de controle: ' + det.erro;
+    else {
+      var partesInv = ['Captação (C3): ' + brl(det.captacao || 0, true), 'Outros gastos: ' + brl(det.outros || 0, true)];
+      if (det.itens) Object.keys(det.itens).forEach(function (k) { partesInv.push('• ' + k + ': ' + brl(det.itens[k], true)); });
+      $('kpiInvCard').title = partesInv.join('\n');
+    }
+  }
 
   // última hora
   var umaH = vs.filter(function (v) { return agora - data(v.t).getTime() < 3600000; });
@@ -649,8 +699,13 @@ function quantoTempo(ms) { var m = Math.floor(ms / 60000); if (m < 1) return 'ag
 var fitaAss = '';
 function desenhaFita(total) {
   var vs = estado.vendas, metas = estado.metas;
+  var inv = Number(estado.investimento || 0), fatBruto = somaFat(vs);
   var itens = [];
   itens.push('<span><b class="ouro">BFV26</b> ' + brl(total) + ' <b class="sobe">▲ ' + vs.length + ' vendas</b></span>');
+  if (inv > 0) {
+    itens.push('<span><b class="ouro">INVESTIMENTO</b> ' + brl(inv, true) +
+      (fatBruto > 0 ? ' · <b class="sobe">ROAS BRUTO ' + (fatBruto / inv).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'x</b> · <span class="cin" style="padding:0">INVESTIBILIDADE ' + (inv / fatBruto * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%</span>' : '') + '</span>');
+  }
   vs.slice(-14).reverse().forEach(function (v) {
     itens.push('<span><b>' + esc(v.n) + '</b>' + (v.uf ? '<span class="cin" style="padding:0 0 0 .4em">' + esc(v.uf) + '</span>' : '') + ' <b class="sobe">▲ +' + brl(val(v)) + '</b> <span class="cin" style="padding:0">' + esc(v.a ? 'via ' + v.a : v.c) + ' · ' + hhmm(data(v.t)) + '</span></span>');
   });
@@ -773,18 +828,18 @@ function iniciaDemo() {
   var lista = [], agora = Date.now(), n = 92;
   for (var i = 0; i < n; i++) lista.push(vendaDemo(agora - 6 * 3600000 * Math.pow(Math.random(), .7)));
   lista.sort(function (a, b) { return a.t.localeCompare(b.t); });
-  aplica({ vendas: lista, metas: METAS_PADRAO, reembolsos: 1 });
+  aplica({ vendas: lista, metas: METAS_PADRAO, reembolsos: 1, investimento: 38450.80 });
   (function prox() {
     setTimeout(function () {
       var extra = Math.random() < .12 ? 5 + Math.floor(Math.random() * 3) : 1;
       for (var k = 0; k < extra; k++) lista.push(vendaDemo(Date.now() - k * 1000));
-      aplica({ vendas: lista.slice(), metas: METAS_PADRAO, reembolsos: 1 });
+      aplica({ vendas: lista.slice(), metas: METAS_PADRAO, reembolsos: 1, investimento: 38450.80 });
       prox();
     }, 7000 + Math.random() * 9000);
   })();
-  // atalhos só da demonstração: V = simula uma venda, M = simula meta batida
+  // atalhos só da demonstração: V = simula uma venda, M = simular meta batida
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'v' || e.key === 'V') { lista.push(vendaDemo(Date.now())); aplica({ vendas: lista.slice(), metas: METAS_PADRAO, reembolsos: 1 }); }
+    if (e.key === 'v' || e.key === 'V') { lista.push(vendaDemo(Date.now())); aplica({ vendas: lista.slice(), metas: METAS_PADRAO, reembolsos: 1, investimento: 38450.80 }); }
     if (e.key === 'm' || e.key === 'M') { fila.push({ meta: METAS_PADRAO[0], idx: 0 }); proximo(); }
   });
 }
